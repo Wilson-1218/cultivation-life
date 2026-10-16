@@ -137,7 +137,7 @@ export function EndView({
 
       <section className="mt-8 border-t border-border pt-6">
         <h2 className="text-lg font-semibold">對這個人說一句話</h2>
-        <p className="mt-2 text-sm leading-7 text-muted-foreground">不寫也算數。寫了就留在這台瀏覽器的前世裡。</p>
+        <p className="mt-2 text-sm leading-7 text-muted-foreground">空白不算留下。有字才會出現在這台瀏覽器的前世裡。</p>
         <label className="sr-only" htmlFor="farewell">
           對這個人說一句話
         </label>
@@ -156,6 +156,7 @@ export function EndView({
           variant="outline"
           className="mt-3 h-10"
           onClick={() => {
+            if (!draft.trim()) return;
             onFarewell(draft);
             setSaved(true);
           }}
