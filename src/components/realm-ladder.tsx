@@ -1,3 +1,4 @@
+import { Mark } from "@/components/marks";
 import { REALMS, formatPeople, type RealmId } from "@/lib/world";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +15,10 @@ export function RealmLadder({ current }: { current: RealmId }) {
               on ? "text-[#9c2f2a]" : "text-muted-foreground",
             )}
           >
-            <span className={on ? "font-semibold" : undefined}>{realm.name}</span>
+            <span className={cn("inline-flex items-center gap-1.5", on && "font-semibold")}>
+              {on ? <Mark name="realm" /> : null}
+              {realm.name}
+            </span>
             <span className="num">{formatPeople(realm.stock)}</span>
           </li>
         );

@@ -29,6 +29,7 @@ import {
   type RealmId,
   type WorldId,
 } from "@/lib/world";
+import { Mark, WithMark, type MarkName } from "@/components/marks";
 import { cn } from "@/lib/utils";
 
 const ENTRY_RATE = 2.6;
@@ -68,7 +69,10 @@ export function IntroView({
 
       <section className="mt-10 grid gap-8 border-t border-border pt-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
         <div>
-          <h2 className="text-xl font-semibold">如果你在這一息入道</h2>
+          <h2 className="flex items-start gap-2 text-xl font-semibold">
+            <Mark name="root" className="mt-1" />
+            <span>如果你在這一息入道</span>
+          </h2>
           <p className="mt-2 max-w-xl text-sm leading-7 text-muted-foreground">
             靈根先落下。偽靈根最慢，人也最多。天靈根與變異靈根聽起來稀少，乘上八十億，仍是一整片要搶名額的人。
           </p>
@@ -96,7 +100,10 @@ export function IntroView({
           </p>
         </div>
         <aside className="border border-border bg-card p-4 sm:p-5">
-          <h2 className="text-lg font-semibold">一生停在哪裡</h2>
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <Mark name="realm" />
+            一生停在哪裡
+          </h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             這是把同一套規則走很多遍之後，人最後停住的地方。不是此刻街上同時站著的人數。
           </p>
@@ -155,6 +162,7 @@ export function IntroView({
 
       <section className="mt-10 grid gap-6 border-t border-border pt-6 sm:grid-cols-3">
         <Note
+          mark="companion"
           title="同一息的人"
           body="開局會有三個人與你同時入道。他們用同一套規則走完，結果放在你旁邊。"
         />
@@ -184,12 +192,17 @@ export function IntroView({
             <ul className="mt-4 divide-y divide-border border-y border-border">
               {past.map((item) => (
                 <li key={item.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-baseline sm:justify-between">
-                  <p className="text-base">
+                  <p className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-base">
                     <span className="font-semibold">{item.name}</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {item.rootName} · {item.realmName} · {item.age}歲
-                    </span>
+                    <WithMark name="root" className="text-sm text-muted-foreground">
+                      {item.rootName}
+                    </WithMark>
+                    <WithMark name="realm" className="text-sm text-muted-foreground">
+                      {item.realmName}
+                    </WithMark>
+                    <WithMark name="life" className="text-sm text-muted-foreground">
+                      {item.age}歲
+                    </WithMark>
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {item.worldName}
@@ -229,13 +242,16 @@ function Counters() {
   const ended = Math.floor(seconds * DEATH_RATE);
   return (
     <div className="mt-8 flex flex-wrap gap-8">
-      <p className="flex flex-col">
+      <p className="flex min-w-0 max-w-full flex-col">
         <strong className="num text-3xl font-semibold">{formatPeople(entered)}</strong>
         <span className="text-sm text-muted-foreground">打開這頁之後入道的人</span>
       </p>
-      <p className="flex flex-col">
+      <p className="flex min-w-0 max-w-full flex-col">
         <strong className="num text-3xl font-semibold">{formatPeople(ended)}</strong>
-        <span className="text-sm text-muted-foreground">同一段時間裡壽元耗盡的人</span>
+        <span className="flex items-start gap-1 text-sm text-muted-foreground">
+          <Mark name="life" className="mt-0.5" />
+          <span>同一段時間裡壽元耗盡的人</span>
+        </span>
       </p>
     </div>
   );
@@ -291,10 +307,13 @@ function peoplePer(stock: number): string {
   return `${formatCount(ratio)}人裡一個`;
 }
 
-function Note({ title, body }: { title: string; body: string }) {
+function Note({ title, body, mark }: { title: string; body: string; mark?: MarkName }) {
   return (
     <div>
-      <h3 className="text-base font-semibold">{title}</h3>
+      <h3 className="flex items-center gap-1.5 text-base font-semibold">
+        {mark ? <Mark name={mark} /> : null}
+        {title}
+      </h3>
       <p className="mt-2 text-sm leading-7 text-muted-foreground">{body}</p>
     </div>
   );

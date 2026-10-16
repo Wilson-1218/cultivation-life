@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CompanionLife } from "@/components/companion-life";
+import { Mark, WithMark } from "@/components/marks";
 import { RealmLadder } from "@/components/realm-ladder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,15 +41,25 @@ export function EndView({
     <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <p className="text-sm tracking-[0.18em] text-[#9c2f2a]">八十億分之一</p>
       <h1 className="mt-3 text-4xl font-semibold sm:text-5xl">
-        {life.ending === "edge" ? `${life.name}還活著` : `${life.name}，${life.age}歲`}
+        {life.ending === "edge" ? `${life.name}還活著` : life.name}
       </h1>
+      <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <WithMark name="realm">{realm.name}</WithMark>
+        <WithMark name="root">{root.name}</WithMark>
+        <WithMark name="life">
+          {life.age}歲 / {life.lifespan}
+        </WithMark>
+      </p>
       <p className="mt-4 text-lg leading-8">
         {life.ending === "edge"
           ? `${life.name}把化神走到這一輪的盡頭，${life.age}歲還活著。再往上不寫。靈根從入道起就是${root.name}。`
           : `${life.cause}。最後停在${realm.name}。靈根從入道起就是${root.name}，選擇沒有改過它。`}
       </p>
 
-      <p className="mt-8 text-sm text-muted-foreground">把一生停在{realm.name}的人</p>
+      <p className="mt-8 flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Mark name="realm" />
+        把一生停在{realm.name}的人
+      </p>
       <p className="num mt-1 text-5xl font-semibold text-[#9c2f2a] sm:text-6xl">{formatPeople(realm.stock)}</p>
       <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
         你的靈根是{root.name}，這一檔約有 {formatPeople(rootPopulation(life.root))} 人。世間是
@@ -57,14 +68,20 @@ export function EndView({
       </p>
 
       <section className="mt-8">
-        <h2 className="text-base font-semibold">往上還有多少人</h2>
+        <h2 className="flex items-center gap-1.5 text-base font-semibold">
+          <Mark name="realm" />
+          往上還有多少人
+        </h2>
         <div className="mt-3">
           <RealmLadder current={life.realm} />
         </div>
       </section>
 
       <section className="mt-8">
-        <h2 className="text-base font-semibold">同一息入道的三個人</h2>
+        <h2 className="flex items-center gap-1.5 text-base font-semibold">
+          <Mark name="companion" />
+          同一息入道的三個人
+        </h2>
         <ul className="mt-3 flex flex-col gap-3">
           {life.companions.map((companion) => (
             <li key={companion.name} className="border-b border-border pb-3 text-sm leading-7">
@@ -77,7 +94,10 @@ export function EndView({
                     ? `還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`
                     : `${companion.finalAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`}
                 </span>
-                <span className="mt-1 block text-[#9c2f2a]">看這一生</span>
+                <span className="mt-1 inline-flex items-center gap-1 text-[#9c2f2a]">
+                  <Mark name="companion" />
+                  看這一生
+                </span>
               </button>
             </li>
           ))}
@@ -138,6 +158,7 @@ export function EndView({
           再入道一次
         </Button>
         <Button variant="outline" className="h-12 px-5" onClick={onSame}>
+          <Mark name="root" className="size-4" />
           同一靈根，再走一次
         </Button>
         <Button variant="ghost" className="h-12 px-5" onClick={onIntro}>

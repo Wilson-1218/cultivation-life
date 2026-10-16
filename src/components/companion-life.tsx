@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Mark, WithMark, passageMark } from "@/components/marks";
 import { type Companion } from "@/lib/engine";
 import { ROOTS, realmById } from "@/lib/world";
 
@@ -32,11 +33,15 @@ export function CompanionLife({
           <>
             <DialogHeader>
               <DialogTitle>
-                {companion.name}的一生
+                <WithMark name="companion">{companion.name}的一生</WithMark>
               </DialogTitle>
               <DialogDescription>
                 <span className="block">
-                  {ROOTS[companion.root].name} · {companion.region} · {ending}
+                  <WithMark name="root">{ROOTS[companion.root].name}</WithMark>
+                  <span>
+                    {" "}
+                    · {companion.region} · {ending}
+                  </span>
                 </span>
                 <span className="mt-1 block">同一套規則走出的短章，看完就回到你自己的人生。</span>
               </DialogDescription>
@@ -45,7 +50,12 @@ export function CompanionLife({
               {companion.chapters.map((chapter, index) => (
                 <li key={`${chapter.age}-${index}`} className="border-l border-border pl-3 text-sm leading-7">
                   <span className="num text-muted-foreground">{chapter.age}歲</span>
-                  <span className="mt-1 block">{chapter.text}</span>
+                  <span className="mt-1 block">
+                    {passageMark(chapter.text) ? (
+                      <Mark name={passageMark(chapter.text)!} className="mr-1 align-[-0.15em]" />
+                    ) : null}
+                    {chapter.text}
+                  </span>
                 </li>
               ))}
             </ol>

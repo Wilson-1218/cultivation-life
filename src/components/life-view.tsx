@@ -21,6 +21,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { CompanionLife } from "@/components/companion-life";
+import { Mark, WithMark, buttonMark, choiceMarks, passageMark } from "@/components/marks";
 import { companionNow, type Companion, type Life } from "@/lib/engine";
 import {
   FOCUS_ORDER,
@@ -68,6 +69,7 @@ export function LifeView({
   const [draftState, setDraftState] = useState({ id: "", text: "" });
   const draft = draftState.id === reflectId ? draftState.text : "";
 
+  const choice = life.pending?.type === "choice" ? life.pending : null;
   const latest = life.log[life.log.length - 1];
   const older = life.log.slice(0, -1).slice(-6).reverse();
   const finished = life.dead || life.ending === "edge";
@@ -120,11 +122,18 @@ export function LifeView({
 
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="order-1 min-w-0">
-          <p className="text-sm text-muted-foreground">
-            {life.name} · {life.region} · {life.age}歲 · {ROOTS[life.root].name}
-            {life.sect ? ` · ${life.sect}` : " · 散修"}
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              {life.name} · {life.region}
+            </span>
+            <WithMark name="life">{life.age}歲</WithMark>
+            <WithMark name="root">{ROOTS[life.root].name}</WithMark>
+            <span>{life.sect ? life.sect : "散修"}</span>
           </p>
-          <h1 className="mt-2 text-4xl font-semibold sm:text-5xl">{realm.name}</h1>
+          <h1 className="mt-2 flex items-center gap-2 text-4xl font-semibold sm:gap-3 sm:text-5xl">
+            <Mark name="realm" className="size-6 text-[#9c2f2a] sm:size-7" />
+            <span>{realm.name}</span>
+          </h1>
           <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
             八十億人裡，約有 {formatPeople(realm.stock)} 人把一生停在{realm.name}。你現在在這一層。
           </p>
@@ -132,7 +141,12 @@ export function LifeView({
           {latest ? (
             <article className="mt-8 border-t border-border pt-6" aria-live="polite">
               <div className="flex items-start justify-between gap-3">
-                <p className="text-lg leading-8">{latest.text}</p>
+                <p className="text-lg leading-8">
+                  {passageMark(latest.text) ? (
+                    <Mark name={passageMark(latest.text)!} className="mr-1.5 align-[-0.15em]" />
+                  ) : null}
+                  {latest.text}
+                </p>
                 <Button
                   variant="ghost"
                   className="h-9 shrink-0 px-2 text-sm"
@@ -145,24 +159,35 @@ export function LifeView({
             </article>
           ) : null}
 
-          {life.pending?.type === "choice" ? (
+          {choice ? (
             <section className="mt-6 border border-border bg-card p-4 sm:p-5">
-              <h2 className="text-xl font-semibold">{life.pending.title}</h2>
-              <p className="mt-3 text-base leading-8">{life.pending.body}</p>
-              <div className="mt-4 flex flex-col gap-2">
-                {life.pending.choices.map((choice) => (
-                  <Button
-                    key={choice.id}
-                    variant="outline"
-                    className="h-auto min-h-12 w-full items-start justify-start px-4 py-3 text-left whitespace-normal"
-                    onClick={() => onChoice(choice.id)}
-                  >
-                    <span className="flex flex-col items-start gap-1">
-                      <span className="text-base">{choice.label}</span>
-                      <span className="text-sm font-normal text-muted-foreground">{choice.hint}</span>
-                    </span>
-                  </Button>
+              <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
+                {choiceMarks(choice.title, choice.body).map((name) => (
+                  <Mark key={name} name={name} className="size-5" />
                 ))}
+                <span>{choice.title}</span>
+              </h2>
+              <p className="mt-3 text-base leading-8">{choice.body}</p>
+              <div className="mt-4 flex flex-col gap-2">
+                {choice.choices.map((item) => {
+                  const mark = buttonMark(choice.title, choice.body, item.label);
+                  return (
+                    <Button
+                      key={item.id}
+                      variant="outline"
+                      className="h-auto min-h-12 w-full items-start justify-start px-4 py-3 text-left whitespace-normal"
+                      onClick={() => onChoice(item.id)}
+                    >
+                      <span className="flex items-start gap-2">
+                        {mark ? <Mark name={mark} className="mt-1 size-4" /> : null}
+                        <span className="flex flex-col items-start gap-1">
+                          <span className="text-base">{item.label}</span>
+                          <span className="text-sm font-normal text-muted-foreground">{item.hint}</span>
+                        </span>
+                      </span>
+                    </Button>
+                  );
+                })}
               </div>
             </section>
           ) : null}
@@ -205,6 +230,9 @@ export function LifeView({
                     )}
                     onClick={() => onFocus(id)}
                   >
+                    {id === "stone" || id === "ally" ? (
+                      <Mark name={id === "stone" ? "stone" : "companion"} className="size-4" />
+                    ) : null}
                     {FOCUSES[id].name}
                   </Button>
                 );
@@ -242,13 +270,19 @@ export function LifeView({
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <dt className="text-muted-foreground">靈石</dt>
-              <dd className="num text-xl">{formatCount(life.stones)}</dd>
+              <dd className="num flex items-center gap-1.5 text-xl">
+                <Mark name="stone" />
+                {formatCount(life.stones)}
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">壽元</dt>
-              <dd className="num text-xl">
-                {life.age}
-                <span className="text-base text-muted-foreground"> / {life.lifespan}</span>
+              <dd className="num flex items-center gap-1.5 text-xl">
+                <Mark name="life" />
+                <span>
+                  {life.age}
+                  <span className="text-base text-muted-foreground"> / {life.lifespan}</span>
+                </span>
               </dd>
             </div>
           </dl>
@@ -277,13 +311,19 @@ export function LifeView({
           </ul>
           <StatsDialog />
           <div className="mt-6">
-            <h2 className="text-sm text-muted-foreground">一生停在各層的人</h2>
+            <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Mark name="realm" />
+              一生停在各層的人
+            </h2>
             <div className="mt-2">
               <RealmLadder current={life.realm} />
             </div>
           </div>
           <div className="mt-6">
-            <h2 className="text-sm text-muted-foreground">同一息入道</h2>
+            <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Mark name="companion" />
+              同一息入道
+            </h2>
             <ul className="mt-2 flex flex-col gap-2">
               {life.companions.map((companion) => (
                 <li key={companion.name}>
@@ -296,7 +336,10 @@ export function LifeView({
                     }}
                   >
                     {companionNow(companion, life.age).text}
-                    <span className="mt-0.5 block text-xs text-[#9c2f2a]">看這一生</span>
+                    <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#9c2f2a]">
+                      <Mark name="companion" />
+                      看這一生
+                    </span>
                   </button>
                 </li>
               ))}
