@@ -32,6 +32,14 @@ export type NamedPerson = {
   from: string;
 };
 
+export type ThreadKind = "kin" | "debt" | "page" | "heir" | "cave" | "scar";
+
+export type LifeThread = {
+  kind: ThreadKind;
+  name: string;
+  from: string;
+};
+
 export type Setup = {
   world: WorldId;
   cohort: CohortId;
@@ -42,6 +50,7 @@ export type Setup = {
   buried?: BuriedRelic | null;
   foe?: NamedPerson | null;
   haunt?: NamedPerson | null;
+  thread?: LifeThread | null;
 };
 
 export const WORLDS: Record<

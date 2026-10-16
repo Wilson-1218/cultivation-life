@@ -11,11 +11,12 @@ import {
   applyChoice,
   applyReflection,
   autoChoiceId,
-  autoFocus,
   burialOf,
   carryFoe,
   carryHaunt,
+  carryThread,
   createLife,
+  playStoryYear,
   finishMortal,
   heavenPoints,
   isFinished,
@@ -23,7 +24,7 @@ import {
   toggleStar,
   type Life,
 } from "@/lib/engine";
-import { clearBuried, clearFoe, clearHaunt, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
+import { clearBuried, clearFoe, clearHaunt, clearThread, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
 import { ROOTS, WORLDS, realmById, type FocusId, type Setup } from "@/lib/world";
 
 type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
@@ -50,37 +51,48 @@ export function Experience() {
   useEffect(() => {
     if (phase !== "drawing") return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const timer = window.setTimeout(() => setPhase("reveal"), reduce ? 0 : 650);
+    const timer = window.setTimeout(() => setPhase("life"), reduce ? 0 : 650);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
   useEffect(() => {
-    if (phase !== "life" || !auto || paused || !life || fault) return;
-    if (isFinished(life)) {
-      const timer = window.setTimeout(() => {
-        remember(life);
-        setPhase("end");
-      }, 700);
+    if (phase !== "life" || paused || !life || fault) return;
+    if (isFinished(life)) return;
+    if (life.revealed && life.mortal) {
+      const timer = window.setTimeout(() => setPhase("flash"), 1100);
       return () => window.clearTimeout(timer);
     }
-    const delay = life.pending ? 780 : 640;
+    if (life.pending) {
+      if (!auto) return;
+      const timer = window.setTimeout(() => {
+        setLife((current) => {
+          if (!current || isFinished(current) || !current.pending) return current;
+          try {
+            if (current.pending.type === "choice") {
+              const choiceId = autoChoiceId(current);
+              settleCarry(choiceId);
+              return applyChoice(current, choiceId);
+            }
+            if (current.pending.type === "reflect") return applyReflection(current, "");
+          } catch {
+            setFault("推演進行到一半斷了。");
+          }
+          return current;
+        });
+      }, 780);
+      return () => window.clearTimeout(timer);
+    }
     const timer = window.setTimeout(() => {
       setLife((current) => {
-        if (!current || isFinished(current)) return current;
+        if (!current || current.pending || isFinished(current)) return current;
         try {
-          if (current.pending?.type === "choice") {
-            const choiceId = autoChoiceId(current);
-            settleCarry(choiceId);
-            return applyChoice(current, choiceId);
-          }
-          if (current.pending?.type === "reflect") return applyReflection(current, "");
-          return advance({ ...current, focus: autoFocus(current) }, 1);
+          return playStoryYear(current);
         } catch {
           setFault("推演進行到一半斷了。");
           return current;
         }
       });
-    }, delay);
+    }, 850);
     return () => window.clearTimeout(timer);
   }, [phase, auto, paused, life, fault]);
 
@@ -93,6 +105,7 @@ export function Experience() {
       bury: burialOf(current),
       foe: carryFoe(current),
       haunt: carryHaunt(current),
+      thread: carryThread(current),
     });
   }
 
@@ -119,6 +132,7 @@ export function Experience() {
       buried: carried.buried,
       foe: carried.foe,
       haunt: carried.haunt,
+      thread: carried.thread,
     });
   }
 
@@ -214,7 +228,7 @@ export function Experience() {
           setPhase("end");
           return;
         }
-        run((current) => advance(current, 1));
+        run((current) => (current.story ? current : advance(current, 1)));
       }}
       onChoice={(id) => {
         settleCarry(id);
@@ -235,6 +249,7 @@ function settleCarry(id: string) {
   if (id.startsWith("dig-past:dig")) clearBuried();
   if (id.startsWith("grudge:")) clearFoe();
   if (id.startsWith("haunt-voice:")) clearHaunt();
+  if (id.startsWith("thread-")) clearThread();
 }
 
 function toPast(life: Life, line: string): PastLife {

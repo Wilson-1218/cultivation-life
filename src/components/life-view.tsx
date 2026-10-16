@@ -119,8 +119,10 @@ export function LifeView({
             <span>
               {life.name} · {life.region}
             </span>
-            <WithMark name="life">{life.age}歲</WithMark>
-            <WithMark name="root">{life.mortal ? "無靈根" : ROOTS[life.root].name}</WithMark>
+            <WithMark name="life">{(life.story ? life.yearAge : life.age)}歲</WithMark>
+            <WithMark name="root">
+              {life.story && !life.revealed ? "尚未測靈" : life.mortal ? "無靈根" : ROOTS[life.root].name}
+            </WithMark>
             <span>{ORIGINS[life.originId].name}</span>
             <span>{life.sect ? life.sect : "散修"}</span>
           </p>
@@ -140,7 +142,20 @@ export function LifeView({
             }}
           />
 
-          {latest ? (
+          {life.story ? (
+            <section className="mt-8 border-t border-border pt-6" aria-live="polite">
+              <h2 className="text-xl font-semibold">{life.yearAge}歲</h2>
+              {life.yearLines.length > 0 ? (
+                <ul className="mt-3 flex flex-col gap-3">
+                  {life.yearLines.map((line, index) => (
+                    <li key={`${life.yearAge}-${index}`} className="text-lg leading-8">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : latest ? (
             <article className="mt-8 border-t border-border pt-6" aria-live="polite">
               <div className="flex items-start justify-between gap-3">
                 <p className="text-lg leading-8">
@@ -241,15 +256,17 @@ export function LifeView({
               })}
             </div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{FOCUSES[life.focus].hint}</p>
-            <div className="mt-4">
-              <Button
-                className="h-12 w-full px-6 text-base md:w-auto"
-                disabled={(!finished && Boolean(life.pending)) || (auto && !paused && !finished)}
-                onClick={onAdvance}
-              >
-                {finished ? "看你落在哪一層" : auto && !paused ? "自動走著" : "過這一段"}
-              </Button>
-            </div>
+            {life.story && !finished ? null : (
+              <div className="mt-4">
+                <Button
+                  className="h-12 w-full px-6 text-base md:w-auto"
+                  disabled={(!finished && Boolean(life.pending)) || (auto && !paused && !finished)}
+                  onClick={onAdvance}
+                >
+                  {finished ? "看你落在哪一層" : auto && !paused ? "自動走著" : "過這一段"}
+                </Button>
+              </div>
+            )}
           </section>
 
           {older.length > 0 ? (
@@ -282,7 +299,7 @@ export function LifeView({
               <dd className="num flex items-center gap-1.5 text-xl">
                 <Mark name="life" />
                 <span>
-                  {life.age}
+                  {life.story ? life.yearAge : life.age}
                   <span className="text-base text-muted-foreground"> / {life.lifespan}</span>
                 </span>
               </dd>

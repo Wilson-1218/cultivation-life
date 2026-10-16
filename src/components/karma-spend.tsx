@@ -2,6 +2,16 @@
 
 import { Button } from "@/components/ui/button";
 import { spendKarma, useKarma } from "@/lib/storage";
+import type { ThreadKind } from "@/lib/world";
+
+function threadLabel(kind: ThreadKind): string {
+  if (kind === "kin") return "前世同門";
+  if (kind === "debt") return "債主";
+  if (kind === "page") return "功法殘頁";
+  if (kind === "heir") return "救過的人的後代";
+  if (kind === "cave") return "被佔的洞府";
+  return "死法留下的舊傷";
+}
 
 export function KarmaSpend() {
   const karma = useKarma();
@@ -23,6 +33,11 @@ export function KarmaSpend() {
       {karma.foe ? (
         <p className="text-sm leading-7 text-muted-foreground">
           下一世會遇上{karma.foe.name}。{karma.foe.from}那一世爭過，對方還活著。這一遇之後就清掉。
+        </p>
+      ) : null}
+      {karma.thread ? (
+        <p className="text-sm leading-7 text-muted-foreground">
+          下一世還帶著一筆別的舊帳：{threadLabel(karma.thread.kind)}，跟{karma.thread.name}有關。碰見之後就清，不往後疊。
         </p>
       ) : null}
       {karma.haunt ? (

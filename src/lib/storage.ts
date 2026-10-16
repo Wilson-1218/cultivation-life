@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { BuriedRelic, KarmaBoost, NamedPerson, RealmId, RootId, WorldId } from "@/lib/world";
+import type { BuriedRelic, KarmaBoost, LifeThread, NamedPerson, RealmId, RootId, ThreadKind, WorldId } from "@/lib/world";
 
 export type PastLife = {
   id: string;
@@ -74,6 +74,7 @@ export type KarmaState = {
   buried: BuriedRelic | null;
   foe: NamedPerson | null;
   haunt: NamedPerson | null;
+  thread: LifeThread | null;
   grantedId: string;
 };
 
@@ -86,8 +87,23 @@ const EMPTY_KARMA: KarmaState = {
   buried: null,
   foe: null,
   haunt: null,
+  thread: null,
   grantedId: "",
 };
+
+const THREADS: ThreadKind[] = ["kin", "debt", "page", "heir", "cave", "scar"];
+
+function parseThread(value: unknown): LifeThread | null {
+  if (!value || typeof value !== "object") return null;
+  const thread = value as Partial<LifeThread>;
+  if (!THREADS.includes(thread.kind as ThreadKind)) return null;
+  if (typeof thread.name !== "string" || !thread.name.trim()) return null;
+  return {
+    kind: thread.kind as ThreadKind,
+    name: thread.name.trim().slice(0, 24),
+    from: typeof thread.from === "string" ? thread.from.trim().slice(0, 48) : "",
+  };
+}
 
 function parsePerson(value: unknown): NamedPerson | null {
   if (!value || typeof value !== "object") return null;
@@ -133,6 +149,7 @@ function parseKarma(raw: string): KarmaState {
           : null,
       foe: parsePerson(parsed.foe),
       haunt: parsePerson(parsed.haunt),
+      thread: parseThread(parsed.thread),
       grantedId: typeof parsed.grantedId === "string" ? parsed.grantedId : "",
     };
   } catch {
@@ -150,6 +167,7 @@ export function grantKarma(input: {
   bury: BuriedRelic | null;
   foe: NamedPerson | null;
   haunt: NamedPerson | null;
+  thread: LifeThread | null;
 }): KarmaState {
   const current = readKarma();
   if (current.grantedId === input.id) return current;
@@ -159,6 +177,7 @@ export function grantKarma(input: {
     buried: input.bury ?? current.buried,
     foe: input.foe,
     haunt: input.haunt,
+    thread: input.thread,
     grantedId: input.id,
   };
   writeKarma(next);
@@ -177,6 +196,7 @@ export function consumeKarma(): {
   buried: BuriedRelic | null;
   foe: NamedPerson | null;
   haunt: NamedPerson | null;
+  thread: LifeThread | null;
 } {
   const current = readKarma();
   writeKarma({
@@ -185,6 +205,7 @@ export function consumeKarma(): {
     buried: current.buried,
     foe: current.foe,
     haunt: current.haunt,
+    thread: current.thread,
     grantedId: "",
   });
   return {
@@ -192,6 +213,7 @@ export function consumeKarma(): {
     buried: current.buried,
     foe: current.foe,
     haunt: current.haunt,
+    thread: current.thread,
   };
 }
 
@@ -211,6 +233,12 @@ export function clearHaunt(): void {
   const current = readKarma();
   if (!current.haunt) return;
   writeKarma({ ...current, haunt: null });
+}
+
+export function clearThread(): void {
+  const current = readKarma();
+  if (!current.thread) return;
+  writeKarma({ ...current, thread: null });
 }
 
 export function useKarma(): KarmaState | null {

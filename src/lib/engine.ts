@@ -1,3 +1,5 @@
+import { AFFAIRS, affairChoices, applyBeat, drawAffairs, resolveAffair } from "./affairs";
+import { humanName } from "./names";
 import {
   FOCUSES,
   MANUALS,
@@ -22,11 +24,13 @@ import {
   rootPopulation,
   type FocusId,
   type GateId,
+  type LifeThread,
   type NamedPerson,
   type OriginId,
   type RealmId,
   type RootId,
   type Setup,
+  type ThreadKind,
 } from "./world";
 
 export type LogEntry = {
@@ -141,6 +145,16 @@ export type Life = {
   haunt: NamedPerson | null;
   grudge: NamedPerson | null;
   heard: boolean;
+  revealed: boolean;
+  yearAge: number;
+  yearLines: string[];
+  yearOpen: boolean;
+  owed: boolean;
+  saved: boolean;
+  learnedPage: boolean;
+  scarred: boolean;
+  hadCave: boolean;
+  thread: LifeThread | null;
 };
 
 type Rng = {
@@ -215,7 +229,7 @@ export function createLife(
   if (boosted === "origin") originId = "clan";
   if (boosted === "root") root = bumpRoot(root);
   const mortal = story && !options?.forceRoot && !boosted && mixSeed(setup.seed || 1, 0x4d) / 4294967296 < 0.07;
-  const name = pick(rng, NAMES);
+  const name = story ? humanName(setup.seed || 1, 0x21) : pick(rng, NAMES);
   const region = pick(rng, REGIONS);
   const living = setup.cohort === "living";
   const relative = living && rng.next() < 0.22;
@@ -229,7 +243,7 @@ export function createLife(
     name,
     region,
     root,
-    age: 16,
+    age: story ? 0 : 16,
     years: 0,
     realm: "qi-early",
     progress: Math.round(rng.next() * 10),
@@ -257,7 +271,7 @@ export function createLife(
     pending: null,
     log: [],
     reflections: [],
-    spans: [{ realm: "qi-early", fromAge: 16, toAge: null }],
+    spans: [{ realm: "qi-early", fromAge: story ? 0 : 16, toAge: null }],
     companions: [],
     origin: "",
     dead: false,
@@ -273,6 +287,16 @@ export function createLife(
     haunt: story ? (setup.haunt ?? null) : null,
     grudge: null,
     heard: false,
+    revealed: !story,
+    yearAge: story ? 0 : 16,
+    yearLines: [],
+    yearOpen: false,
+    owed: false,
+    saved: false,
+    learnedPage: false,
+    scarred: false,
+    hadCave: false,
+    thread: story ? (setup.thread ?? null) : null,
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -295,13 +319,15 @@ export function createLife(
     ];
   }
   life.origin = writeOrigin(life);
-  life.log.push({
-    id: `${life.id}-origin`,
-    age: 16,
-    kind: "system",
-    text: life.origin,
-    starred: false,
-  });
+  if (!story) {
+    life.log.push({
+      id: `${life.id}-origin`,
+      age: 16,
+      kind: "system",
+      text: life.origin,
+      starred: false,
+    });
+  }
 
   if (withCompanions) {
     const used = new Set([life.name]);
@@ -309,19 +335,21 @@ export function createLife(
       const companionSeed = mixSeed(setup.seed || 1, salt);
       const companion = runToEnd(
         createLife(
-          { ...setup, seed: companionSeed, boost: null, buried: null, foe: null, haunt: null },
+          { ...setup, seed: companionSeed, boost: null, buried: null, foe: null, haunt: null, thread: null },
           { companions: false, story },
         ),
       );
       if (used.has(companion.name)) {
-        companion.name = NAMES.find((item) => !used.has(item)) ?? companion.name;
+        companion.name = story
+          ? humanName(companionSeed, 0x99)
+          : (NAMES.find((item) => !used.has(item)) ?? companion.name);
       }
       used.add(companion.name);
       return summarizeCompanion(companion);
     });
   }
 
-  return life;
+  return story ? playStoryYear(life) : life;
 }
 
 export function advance(life: Life, years?: number): Life {
@@ -363,7 +391,17 @@ export function applyChoice(life: Life, choiceId: string): Life {
     throw new Error("這個抉擇不在這一頁上");
   }
   draft.pending = null;
+  const logAt = draft.log.length;
   resolveChoice(draft, rng, pending.id, choiceId);
+  if (draft.story) {
+    const fresh = draft.log.splice(logAt);
+    for (const entry of fresh) draft.yearLines.push(entry.text);
+    draft.yearOpen = false;
+    if (!draft.dead && draft.ending !== "edge") {
+      draft.age += 1;
+      draft.years += 1;
+    }
+  }
   draft.rngState = rng.state();
   trimLog(draft);
   return draft;
@@ -442,6 +480,7 @@ export function steadyChoiceId(life: Life): string {
 }
 
 export function runToEnd(life: Life, policy: "auto" | "steady" = "auto"): Life {
+  if (life.story) return runStory(life, policy);
   if (life.mortal && !isFinished(life)) return finishMortal(life);
   let current = life;
   let guard = 0;
@@ -469,6 +508,380 @@ export function runToEnd(life: Life, policy: "auto" | "steady" = "auto"): Life {
     return draft;
   }
   return current;
+}
+
+function runStory(life: Life, policy: "auto" | "steady"): Life {
+  let current = life;
+  let guard = 0;
+  while (!isFinished(current) && guard < 8000) {
+    if (current.revealed && current.mortal) return finishMortal(current);
+    if (current.pending?.type === "choice") {
+      const choiceId = policy === "steady" ? steadyChoiceId(current) : autoChoiceId(current);
+      current = applyChoice(current, choiceId);
+    } else if (current.pending?.type === "reflect") {
+      current = applyReflection(current, "");
+    } else {
+      current = playStoryYear(current);
+    }
+    guard += 1;
+  }
+  if (!isFinished(current)) {
+    const draft = clone(current);
+    markDeath(draft, "這一世在推演裡停住了");
+    draft.yearLines.push("這一世在推演裡停住了。");
+    return draft;
+  }
+  return current;
+}
+
+function scheduled(seed: number, salt: number, min: number, span: number): number {
+  return min + (mixSeed(seed, salt) % span);
+}
+
+function testAgeOf(life: Life): number {
+  return scheduled(life.setup.seed || 1, 0x6d, 7, 5);
+}
+
+const THREAD_WINDOW: Record<ThreadKind, [number, number]> = {
+  scar: [33, 6],
+  kin: [50, 7],
+  debt: [58, 7],
+  page: [66, 7],
+  heir: [74, 7],
+  cave: [82, 7],
+};
+
+function threadDueAge(life: Life): number | null {
+  if (!life.thread) return null;
+  const [min, span] = THREAD_WINDOW[life.thread.kind];
+  return scheduled(life.setup.seed || 1, 0x90 + life.thread.kind.length, min, span);
+}
+
+function dueLegacy(life: Life, age: number): string | null {
+  const seed = life.setup.seed || 1;
+  const testAge = testAgeOf(life);
+  if (
+    life.originId === "cauldron" &&
+    !life.escaped &&
+    life.revealed &&
+    !life.seenEvents.includes("cauldron-fire") &&
+    age === Math.max(scheduled(seed, 0x71, 8, 4), testAge + 1)
+  ) {
+    return "cauldron-fire";
+  }
+  if (life.haunt && !life.seenEvents.includes("haunt-voice") && age === scheduled(seed, 0x41, 14, 5)) {
+    return "haunt-voice";
+  }
+  if (life.foe && !life.seenEvents.includes("grudge") && age === scheduled(seed, 0x42, 21, 6)) return "grudge";
+  if (life.thread && !life.seenEvents.includes(`thread-${life.thread.kind}`) && threadDueAge(life) === age) {
+    return `thread-${life.thread.kind}`;
+  }
+  if (life.buried && !life.seenEvents.includes("dig-past") && age === scheduled(seed, 0x43, 41, 8)) return "dig-past";
+  if (life.heard && !life.seenEvents.includes("haunt-risk") && age === scheduled(seed, 0x44, 96, 8)) return "haunt-risk";
+  return null;
+}
+
+function pushBeat(life: Life, rng: Rng, age: number): void {
+  const drawn = drawAffairs(life, rng, age, 1, false);
+  const beat = drawn.beats[0];
+  if (!beat) return;
+  life.seenEvents.push(beat.id);
+  life.yearLines.push(applyBeat(life, rng, beat));
+}
+
+function openLegacy(life: Life, id: string): void {
+  if (id.startsWith("thread-")) {
+    const kind = id.slice("thread-".length) as ThreadKind;
+    life.seenEvents.push(id);
+    life.pending = threadPending(life, kind);
+    return;
+  }
+  const event = EVENTS.find((item) => item.id === id);
+  if (!event) return;
+  life.seenEvents.push(id);
+  life.pending = event.make(life);
+}
+
+export function playStoryYear(life: Life): Life {
+  if (!life.story || life.pending || isFinished(life)) return life;
+  if (life.revealed && life.mortal) return life;
+  const draft = clone(life);
+  const rng = makeRng(draft.rngState);
+  for (const line of draft.yearLines) {
+    draft.log.push({
+      id: nextLogId(draft),
+      age: draft.yearAge,
+      kind: "chapter",
+      text: line,
+      starred: false,
+    });
+  }
+  const age = draft.age;
+  draft.yearAge = age;
+  draft.yearLines = [];
+  draft.yearOpen = false;
+
+  if (age >= draft.lifespan) {
+    const starved = draft.realm === "spirit" && draft.stones < TUNING.spiritUpkeep;
+    markDeath(draft, starved ? "靈石斷供，化神反噬" : "壽元耗盡");
+    draft.yearLines.push(`${age}歲。${draft.cause}。你停在${realmById(draft.realm).name}。`);
+    draft.rngState = rng.state();
+    trimLog(draft);
+    return draft;
+  }
+  const ratio = (age + 1) / Math.max(1, draft.lifespan);
+  if (draft.revealed && ratio > 0.93 && rng.next() < (ratio - 0.93) * 0.55) {
+    markDeath(draft, "壽元將盡");
+    draft.yearLines.push(`${age}歲。壽元將盡。你停在${realmById(draft.realm).name}。`);
+    draft.rngState = rng.state();
+    trimLog(draft);
+    return draft;
+  }
+
+  const testAge = testAgeOf(draft);
+  if (!draft.revealed && age === testAge) {
+    draft.revealed = true;
+    draft.seenEvents.push("root-test");
+    if (draft.mortal) {
+      draft.yearLines.push(`${age}歲，有人把你的手按在牌上。牌是冷的。沒有靈根。`);
+      draft.flash = [
+        `${draft.name}，${draft.region}。`,
+        `${age}歲測靈。牌沒有熱。`,
+        "沒有靈根。往後不進修途。",
+        "壽元照凡人走完。",
+      ];
+    } else {
+      const root = ROOTS[draft.root];
+      draft.yearLines.push(`${age}歲，有人測你的靈根。牌熱了一下，是${root.name}。${root.flavor}`);
+      draft.age += 1;
+      draft.years += 1;
+    }
+    draft.rngState = rng.state();
+    trimLog(draft);
+    return draft;
+  }
+
+  const notes: string[] = [];
+  if (draft.revealed && !draft.mortal) {
+    applyYear(draft, rng, notes);
+    updateQi(draft, notes);
+    if (draft.realm === "spirit" && !draft.spiritSettled && draft.progress >= TUNING.spiritDone) {
+      draft.ending = "edge";
+      draft.cause = "化神這一層走到頭了";
+      closeSpan(draft, draft.age);
+      draft.yearLines.push(`${age}歲。化神這一層走到頭了，人還在。`);
+      draft.rngState = rng.state();
+      trimLog(draft);
+      return draft;
+    }
+  }
+
+  const legacy = dueLegacy(draft, age);
+  const two = rng.next() < 0.5;
+  if (legacy) {
+    if (two) pushBeat(draft, rng, age);
+    openLegacy(draft, legacy);
+    draft.yearOpen = Boolean(draft.pending);
+    draft.rngState = rng.state();
+    trimLog(draft);
+    return draft;
+  }
+  if (draft.revealed && !draft.mortal && age >= 16 && openGate(draft)) {
+    if (two && draft.yearLines.length === 0) pushBeat(draft, rng, age);
+    draft.yearOpen = true;
+    draft.rngState = rng.state();
+    trimLog(draft);
+    return draft;
+  }
+
+  const lines: string[] = [];
+  const realmNote = notes.find((note) => note.includes("境界"));
+  if (realmNote) lines.push(realmNote);
+  if (
+    draft.revealed &&
+    !draft.mortal &&
+    !draft.seenEvents.includes("lifespan-mark") &&
+    age >= Math.max(28, Math.floor(draft.lifespan * 0.86))
+  ) {
+    lines.push(milestoneBody(draft));
+    draft.seenEvents.push("lifespan-mark");
+  }
+  const room = Math.max(0, (two ? 2 : 1) - lines.length);
+  if (room > 0) {
+    const allowChoice = rng.next() < (age < 12 ? 0.16 : 0.34);
+    let drawn = drawAffairs(draft, rng, age, room, allowChoice);
+    if (drawn.beats.length === 0 && !drawn.choice) {
+      drawn = drawAffairs(draft, rng, age, room, true);
+    }
+    for (const beat of drawn.beats) {
+      if (lines.length >= 2) break;
+      draft.seenEvents.push(beat.id);
+      lines.push(applyBeat(draft, rng, beat));
+    }
+    if (drawn.choice && lines.length < 2) {
+      draft.seenEvents.push(drawn.choice.id);
+      draft.pending = {
+        type: "choice",
+        id: drawn.choice.id,
+        title: drawn.choice.title,
+        body: drawn.choice.text,
+        choices: affairChoices(draft, drawn.choice),
+      };
+      draft.yearOpen = true;
+    }
+  }
+  if (lines.length === 0 && !draft.pending) {
+    lines.push(`${age}歲這一年，你還在。日子照舊過完。`);
+  }
+  draft.yearLines = lines.slice(0, 2);
+  if (!draft.pending) {
+    draft.age += 1;
+    draft.years += 1;
+  }
+  draft.rngState = rng.state();
+  trimLog(draft);
+  return draft;
+}
+
+function threadPending(life: Life, kind: ThreadKind): Pending {
+  const name = life.thread?.name ?? "那個人";
+  const from = life.thread?.from ?? "上一世";
+  const age = life.yearAge;
+  const copy: Record<ThreadKind, { title: string; body: string; a: string; ah: string; b: string; bh: string }> = {
+    kin: {
+      title: "前世的同門還認得你",
+      body: `${name}看了你很久，說你走路的樣子像${from}。`,
+      a: "承認",
+      ah: "人脈會暖。認完這一面就清掉。",
+      b: "搖頭",
+      bh: "不認。這一面也到此為止。",
+    },
+    debt: {
+      title: "債主找上門",
+      body: `${name}拿著${from}留下的欠據，要你還二十塊。`,
+      a: "還上",
+      ah: "口袋薄一截。債就清了。",
+      b: "立刻跑路",
+      bh: "人通常還在。債也到此為止。",
+    },
+    page: {
+      title: "功法殘頁送回來",
+      body: `有人把${from}抄過的半頁塞給你，說是${name}叫他帶來的。`,
+      a: "收下",
+      ah: "見識會厚一點。這頁之後不再出現。",
+      b: "燒掉",
+      bh: "不留。這頁到此為止。",
+    },
+    heir: {
+      title: "你救過的人，後代來了",
+      body: `${name}說自己是${from}救過的人的後代，專程來見你。`,
+      a: "照應",
+      ah: "會留下一點靈石和人情。見完就清。",
+      b: "不認",
+      bh: "這一面到此為止。",
+    },
+    cave: {
+      title: "前世的洞府被人佔了",
+      body: `${name}住在${from}量過的那處洞裡，說這地方現在是他的。`,
+      a: "讓出",
+      ah: "不爭。這處洞的事到此為止。",
+      b: "奪回來",
+      bh: "可能死在洞口。",
+    },
+    scar: {
+      title: "死法留下的舊傷",
+      body: `${from}那一世的傷，在你${age}歲這年發作。${name}這個名字你還記得。`,
+      a: "養著",
+      ah: "心境回來一點。這傷不再來討。",
+      b: "硬扛",
+      bh: "可能扛不住。",
+    },
+  };
+  const item = copy[kind];
+  return {
+    type: "choice",
+    id: `thread-${kind}`,
+    title: item.title,
+    body: item.body,
+    choices: [
+      { id: `thread-${kind}:a`, label: item.a, hint: item.ah },
+      { id: `thread-${kind}:b`, label: item.b, hint: item.bh },
+    ],
+  };
+}
+
+function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string): void {
+  const hard = choiceId.endsWith(":b");
+  life.thread = null;
+  if (kind === "kin") {
+    if (!hard) life.bond = clamp(life.bond + 8);
+    pushLog(life, "choice", hard ? "你搖頭。對方自己走了，這一面到此為止。" : "你承認了。對方點頭，沒有再跟著。");
+    return;
+  }
+  if (kind === "debt") {
+    if (!hard) {
+      life.stones = Math.max(0, life.stones - 20);
+      pushLog(life, "choice", "你還了二十塊。欠據燒了。");
+      return;
+    }
+    if (rng.next() < 0.08) {
+      markDeath(life, "跑的時候被債主波及");
+      pushLog(life, "choice", "你跑了，還是被債主波及。");
+      return;
+    }
+    pushLog(life, "choice", "你跑了。債主沒有追上，這筆到此為止。");
+    return;
+  }
+  if (kind === "page") {
+    if (!hard) {
+      life.insight = clamp(life.insight + 6);
+      life.manual = life.manual ?? "前世殘頁";
+      life.learnedPage = true;
+      pushLog(life, "choice", "你收下那半頁。見識厚了一點，頁子不再出現。");
+      return;
+    }
+    pushLog(life, "choice", "你把那半頁燒了。沒有留下。");
+    return;
+  }
+  if (kind === "heir") {
+    if (!hard) {
+      life.stones += 12;
+      life.bond = clamp(life.bond + 4);
+      pushLog(life, "choice", "你照應了這一晚。對方留下十二塊，人就走了。");
+      return;
+    }
+    pushLog(life, "choice", "你沒有認。對方行了禮，自己離開。");
+    return;
+  }
+  if (kind === "cave") {
+    if (hard && rng.next() < 0.4) {
+      markDeath(life, "上前爭奪，沒有回來");
+      pushLog(life, "choice", "你去奪洞。人沒有回來。");
+      return;
+    }
+    if (hard) {
+      life.stones += 20;
+      life.hadCave = true;
+      life.scarred = true;
+      pushLog(life, "choice", "你把人請走了。洞是你的，身上也留了傷。");
+      return;
+    }
+    pushLog(life, "choice", "你讓出這處洞。沒有再爭。");
+    return;
+  }
+  if (hard && rng.next() < 0.22) {
+    markDeath(life, "舊傷發作，沒有扛住");
+    pushLog(life, "choice", "你硬扛。舊傷把你帶走了。");
+    return;
+  }
+  if (hard) {
+    life.heart = clamp(life.heart - 6);
+    life.scarred = true;
+    pushLog(life, "choice", "你硬扛過去。人還在，傷還在，這一次不再討。");
+    return;
+  }
+  life.heart = clamp(life.heart + 6);
+  pushLog(life, "choice", "你把舊傷養著。它這一生不再發作。");
 }
 
 export function companionNow(companion: Companion, age: number): {
@@ -736,6 +1149,18 @@ function nextStoryId(life: Life): string | null {
 function resolveChoice(life: Life, rng: Rng, pendingId: string, choiceId: string): void {
   if (pendingId.startsWith("gate-")) {
     resolveGate(life, rng, pendingId.slice(5) as GateId, choiceId);
+    return;
+  }
+  if (pendingId.startsWith("thread-")) {
+    resolveThread(life, rng, pendingId.slice(7) as ThreadKind, choiceId);
+    return;
+  }
+  const affair = AFFAIRS.find((item) => item.id === pendingId);
+  if (affair) {
+    const result = resolveAffair(life, rng, affair, choiceId);
+    if (result.grudge) noteGrudge(life, personName(life, 0x71));
+    if (result.die) markDeath(life, result.cause);
+    pushLog(life, "choice", result.line);
     return;
   }
   const event = EVENTS.find((item) => item.id === pendingId);
@@ -1887,6 +2312,8 @@ export function karmaSentence(life: Life): string {
   }
   if (life.grudge) bits.push(`下一世會遇上${life.grudge.name}。這一世爭過，對方還活著。`);
   if (hauntOf(life)) bits.push("下一世早段，腦子裡會有這個舊人開口。");
+  const thread = carryThread(life);
+  if (thread) bits.push(`下一世會碰上一種別的舊帳：${threadLabel(thread.kind)}。不是每種都會來。`);
   if (bits.length === 0) return "這一世走得不平靜，沒有東西埋下去。";
   return bits.join("");
 }
@@ -1907,6 +2334,30 @@ export function carryFoe(life: Life): NamedPerson | null {
 
 export function carryHaunt(life: Life): NamedPerson | null {
   return hauntOf(life) ?? life.haunt;
+}
+
+export function carryThread(life: Life): LifeThread | null {
+  const kinds: ThreadKind[] = [];
+  if (life.sect) kinds.push("kin");
+  if (life.owed) kinds.push("debt");
+  if (life.learnedPage) kinds.push("page");
+  if (life.saved) kinds.push("heir");
+  const foundation = REALMS.findIndex((item) => item.id === "foundation");
+  const index = REALMS.findIndex((item) => item.id === life.realm);
+  if ((life.hadCave || index >= foundation) && !hauntOf(life)) kinds.push("cave");
+  if (life.scarred && !life.grudge) kinds.push("scar");
+  if (kinds.length === 0) return null;
+  const kind = kinds[mixSeed(life.setup.seed || 1, 0x93) % kinds.length]!;
+  return { kind, name: humanName(life.setup.seed || 1, 0x94), from: life.name };
+}
+
+function threadLabel(kind: ThreadKind): string {
+  if (kind === "kin") return "前世同門";
+  if (kind === "debt") return "債主";
+  if (kind === "page") return "功法殘頁";
+  if (kind === "heir") return "救過的人的後代";
+  if (kind === "cave") return "被佔的洞府";
+  return "死法留下的舊傷";
 }
 
 export function burialOf(life: Life): { region: string; item: string; by: string } | null {
@@ -2070,10 +2521,9 @@ function makeRng(seed: number): Rng {
 }
 
 function personName(life: Life, salt: number): string {
-  const index = mixSeed(life.setup.seed || 1, salt) % NAMES.length;
-  const name = NAMES[index];
+  const name = humanName(life.setup.seed || 1, salt);
   if (name !== life.name) return name;
-  return NAMES[(index + 1) % NAMES.length];
+  return humanName(life.setup.seed || 1, salt + 19);
 }
 
 function noteGrudge(life: Life, name: string): void {
