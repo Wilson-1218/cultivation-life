@@ -20,6 +20,16 @@ export function KarmaSpend() {
           {karma.buried.item}，在{karma.buried.region}一帶。下一世有機會挖到，也可能沒有。
         </p>
       ) : null}
+      {karma.foe ? (
+        <p className="text-sm leading-7 text-muted-foreground">
+          下一世會遇上{karma.foe.name}。{karma.foe.from}那一世爭過，對方還活著。這一遇之後就清掉。
+        </p>
+      ) : null}
+      {karma.haunt ? (
+        <p className="text-sm leading-7 text-muted-foreground">
+          下一世早段，腦子裡會有{karma.haunt.name}開口。聽可以得到一截靈石，後面還有一次奪舍。壓下去就沒有。
+        </p>
+      ) : null}
       {karma.boost ? (
         <p className="text-sm leading-7">
           下一世會用上：{karma.boost === "root" ? "靈根往上偏一檔。" : "出身落在修仙家族旁系。"}

@@ -22,6 +22,7 @@ import {
   rootPopulation,
   type FocusId,
   type GateId,
+  type NamedPerson,
   type OriginId,
   type RealmId,
   type RootId,
@@ -136,6 +137,10 @@ export type Life = {
   flash: string[];
   buried: { region: string; item: string; by: string } | null;
   escaped: boolean;
+  foe: NamedPerson | null;
+  haunt: NamedPerson | null;
+  grudge: NamedPerson | null;
+  heard: boolean;
 };
 
 type Rng = {
@@ -264,6 +269,10 @@ export function createLife(
     flash: [],
     buried: story ? (setup.buried ?? null) : null,
     escaped: false,
+    foe: story ? (setup.foe ?? null) : null,
+    haunt: story ? (setup.haunt ?? null) : null,
+    grudge: null,
+    heard: false,
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -300,7 +309,7 @@ export function createLife(
       const companionSeed = mixSeed(setup.seed || 1, salt);
       const companion = runToEnd(
         createLife(
-          { ...setup, seed: companionSeed, boost: null, buried: null },
+          { ...setup, seed: companionSeed, boost: null, buried: null, foe: null, haunt: null },
           { companions: false, story },
         ),
       );
@@ -711,10 +720,13 @@ function nextStoryId(life: Life): string | null {
   if (life.originId === "cauldron" && !life.escaped && life.years >= 2 && life.years <= 8) {
     candidates.push("cauldron-fire");
   }
+  if (life.haunt && life.years >= 4 && life.years <= 7) candidates.push("haunt-voice");
+  if (life.foe && life.years >= 9 && life.years <= 10) candidates.push("grudge");
   if (life.years >= 11 && life.years <= 20) candidates.push("snatch");
   if (life.buried && life.years >= 12 && life.years <= 40) candidates.push("dig-past");
   if (life.originId === "clan" && life.years >= 18 && life.years <= 32) candidates.push("clan-tithe");
   if (life.originId === "remnant" && life.years >= 22 && life.years <= 44) candidates.push("remnant-surge");
+  if (life.heard && life.years >= 27 && life.years <= 34) candidates.push("haunt-risk");
   if (life.years > 12 && life.age >= Math.max(28, Math.floor(life.lifespan * 0.86))) {
     candidates.push("lifespan-mark");
   }
@@ -1481,18 +1493,21 @@ const EVENTS: LifeEvent[] = [
     }),
     resolve: (life, rng, choiceId) => {
       const fight = choiceId.endsWith(":fight");
+      const keeper = personName(life, 0x72);
       const dieAt = fight ? 0.55 : 0.22;
       if (rng.next() < dieAt) {
+        if (fight) noteGrudge(life, keeper);
         markDeath(life, fight ? "爐火收口，你撞上去沒有出來" : "爐火收口，你沒有跑出去");
-        pushLog(life, "choice", fight ? "你撞上去。爐火先收了你。" : "你跑了。爐火還是先收了口。");
+        pushLog(life, "choice", fight ? `你撞上去。${keeper}還活著，爐火先收了你。` : "你跑了。爐火還是先收了口。");
         return;
       }
       life.escaped = true;
       life.lifespan = Math.max(life.lifespan, realmById(life.realm).lifespan);
       if (fight) {
+        noteGrudge(life, keeper);
         life.ling = clamp(life.ling - 12);
         life.heart = clamp(life.heart - 6);
-        pushLog(life, "choice", "你撞開一條縫，人也傷了。壽元改記回這一境。");
+        pushLog(life, "choice", `你撞開一條縫，人也傷了。${keeper}還在。壽元改記回這一境。`);
         return;
       }
       pushLog(life, "choice", "你跑出了那座爐。壽元改記回這一境。");
@@ -1547,22 +1562,25 @@ const EVENTS: LifeEvent[] = [
         return;
       }
       const harsh = life.originId === "orphan" ? 0.55 : 0.42;
+      const rival = personName(life, 0x71);
       const roll = rng.next();
       if (roll < harsh) {
-        markDeath(life, "上前爭奪，沒有回來");
-        pushLog(life, "choice", "你上前。東西還在路上，人沒有回來。");
+        noteGrudge(life, rival);
+        markDeath(life, `上前爭奪，${rival}還活著，你沒有回來`);
+        pushLog(life, "choice", `你上前。${rival}還活著，你沒有回來。`);
         return;
       }
       if (roll < harsh + 0.33) {
+        noteGrudge(life, rival);
         life.ling = clamp(life.ling - 10);
         life.lifespan = Math.max(life.age + 2, life.lifespan - 3);
         life.stones += 8;
-        pushLog(life, "choice", "你搶到一點，人也傷了。還站得住。");
+        pushLog(life, "choice", `你搶到一點，人也傷了。${rival}還站在對面。`);
         return;
       }
       const found = 18 + Math.floor(rng.next() * 40);
       life.stones += found;
-      pushLog(life, "choice", `你搶到 ${formatCount(found)} 塊，人還站著。這種事不能常做。`);
+      pushLog(life, "choice", `你搶到 ${formatCount(found)} 塊，人還站著。對面的人沒有再站起來。`);
     },
   },
   {
@@ -1626,9 +1644,11 @@ const EVENTS: LifeEvent[] = [
         return;
       }
       if (choiceId.endsWith(":fight")) {
+        const kin = personName(life, 0x73);
         if (rng.next() < 0.48) {
-          markDeath(life, "上前爭奪，家族沒有讓你走");
-          pushLog(life, "choice", "你去搶帳本。族裡的人先下手。你沒有走出那道門。");
+          noteGrudge(life, kin);
+          markDeath(life, `上前爭奪，${kin}還活著，家族沒有讓你走`);
+          pushLog(life, "choice", `你去搶帳本。${kin}還活著，你沒有走出那道門。`);
           return;
         }
         life.ling = clamp(life.ling - 8);
@@ -1696,6 +1716,102 @@ const EVENTS: LifeEvent[] = [
       pushLog(life, "choice", "你把這筆人數看過了。壽元還在走。");
     },
   },
+  {
+    id: "haunt-voice",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "haunt-voice",
+      title: "腦子裡有個舊人",
+      body: `${life.haunt?.name ?? "上一世的人"}在腦子裡說話。上一世不是壽元走完，是${life.haunt?.from ?? "橫死"}。聽，先拿一截靈石，這一生後面還會再來一次。壓下去，就當沒有這個人。`,
+      choices: [
+        { id: "haunt-voice:listen", label: "聽", hint: "口袋多 48 塊。後面有一次奪舍。" },
+        { id: "haunt-voice:suppress", label: "壓下去", hint: "沒有靈石。這一生也不再出現這個人。" },
+      ],
+    }),
+    resolve: (life, _rng, choiceId) => {
+      const name = life.haunt?.name ?? "那個舊人";
+      life.haunt = null;
+      if (!choiceId.endsWith(":listen")) {
+        life.heard = false;
+        pushLog(life, "choice", `你把${name}的聲音壓了下去。沒有多出靈石，後面也不再響。`);
+        return;
+      }
+      life.heard = true;
+      life.stones += 48;
+      pushLog(life, "choice", `你聽了${name}。口袋多了 48 塊。那個聲音說，後面還會再來一次。`);
+    },
+  },
+  {
+    id: "grudge",
+    story: true,
+    when: () => false,
+    make: (life) => {
+      const name = life.foe?.name ?? "那個人";
+      const from = life.foe?.from ? `${life.foe.from}那一世` : "上一世";
+      return {
+        type: "choice",
+        id: "grudge",
+        title: "前世的人站在路上",
+        body: `${name}還認得你。${from}你上前爭過，對方沒有死。這一世只出現這一回。`,
+        choices: [
+          { id: "grudge:run", label: "立刻跑路", hint: "不跟這個人打。人通常還在。" },
+          { id: "grudge:fight", label: "對上", hint: "可能死在這個人手上。" },
+        ],
+      };
+    },
+    resolve: (life, rng, choiceId) => {
+      const name = life.foe?.name ?? "那個人";
+      life.foe = null;
+      if (choiceId.endsWith(":run")) {
+        if (rng.next() < 0.08) {
+          markDeath(life, `跑的時候被${name}波及`);
+          pushLog(life, "choice", `你跑了。${name}還是砸到一下。人沒有離開。`);
+          return;
+        }
+        pushLog(life, "choice", `你跑了。${name}沒有追上來，人還在。這一遇到此為止。`);
+        return;
+      }
+      if (rng.next() < 0.62) {
+        markDeath(life, `對上${name}，沒有回來`);
+        pushLog(life, "choice", `你對上${name}。人留在那條路上。`);
+        return;
+      }
+      life.ling = clamp(life.ling - 8);
+      life.stones += 6;
+      pushLog(life, "choice", `你對上${name}，人還站著，也傷了。這一遇到此為止。`);
+    },
+  },
+  {
+    id: "haunt-risk",
+    story: true,
+    when: () => false,
+    make: () => ({
+      type: "choice",
+      id: "haunt-risk",
+      title: "舊人要出來",
+      body: "先前聽過的那個聲音要佔這具身體。讓出來，人就不是你。扛，要看心境夠不夠。",
+      choices: [
+        { id: "haunt-risk:yield", label: "讓出來", hint: "選錯。這一世會寫成奪舍。" },
+        { id: "haunt-risk:hold", label: "扛住", hint: "心境夠就還是你。不夠，一樣被奪。" },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      if (choiceId.endsWith(":yield")) {
+        markDeath(life, "奪舍，身體讓給了上一世的人");
+        pushLog(life, "choice", "你讓了。這具身體還在，人已經不是你。");
+        return;
+      }
+      if (life.heart < 42 || rng.next() < 0.45) {
+        markDeath(life, "奪舍，心境沒有扛住");
+        pushLog(life, "choice", "你想扛。那個聲音還是把你蓋過去了。");
+        return;
+      }
+      life.heart = clamp(life.heart - 6);
+      pushLog(life, "choice", "你扛住了。聲音退下去，人還是你。");
+    },
+  },
 ];
 
 function writeOrigin(life: Life): string {
@@ -1753,6 +1869,8 @@ export function heavenPoints(life: Life): number {
 export function epitaph(life: Life): string {
   if (life.mortal) return "沒有靈根的人，也把日子過完了";
   if (life.ending === "edge") return "這一層走到頭了，人還在";
+  if (/奪舍/.test(life.cause)) return "身體還在，人被奪舍";
+  if (/對上/.test(life.cause)) return "前世的人還在路上";
   if (/爭奪/.test(life.cause)) return "東西還在路上，人沒有回來";
   if (/跑的時候/.test(life.cause)) return "跑了，還是沒有跑出那一擊";
   if (/爐/.test(life.cause)) return "爐火按時收口";
@@ -1763,10 +1881,32 @@ export function epitaph(life: Life): string {
 }
 
 export function karmaSentence(life: Life): string {
+  const bits: string[] = [];
   if (life.mortal || /壽元耗盡|壽元將盡/.test(life.cause)) {
-    return `下一世若走到${life.region}一帶，土裡可能還有你埋下的${BURIED_ITEM}。`;
+    bits.push(`下一世若走到${life.region}一帶，土裡可能還有你埋下的${BURIED_ITEM}。`);
   }
-  return "這一世走得不平靜，沒有東西埋下去。";
+  if (life.grudge) bits.push(`下一世會遇上${life.grudge.name}。這一世爭過，對方還活著。`);
+  if (hauntOf(life)) bits.push("下一世早段，腦子裡會有這個舊人開口。");
+  if (bits.length === 0) return "這一世走得不平靜，沒有東西埋下去。";
+  return bits.join("");
+}
+
+export function hauntOf(life: Life): NamedPerson | null {
+  if (life.mortal || life.ending !== "dead") return null;
+  const index = REALMS.findIndex((item) => item.id === life.realm);
+  const foundation = REALMS.findIndex((item) => item.id === "foundation");
+  if (index < foundation) return null;
+  if (/壽元耗盡|壽元將盡|沒有靈根/.test(life.cause)) return null;
+  if (!/爭奪|波及|走火|秘境|突破失敗|反噬|爐/.test(life.cause)) return null;
+  return { name: life.name, from: life.cause };
+}
+
+export function carryFoe(life: Life): NamedPerson | null {
+  return life.grudge ?? life.foe;
+}
+
+export function carryHaunt(life: Life): NamedPerson | null {
+  return hauntOf(life) ?? life.haunt;
 }
 
 export function burialOf(life: Life): { region: string; item: string; by: string } | null {
@@ -1927,6 +2067,17 @@ function makeRng(seed: number): Rng {
       return state >>> 0;
     },
   };
+}
+
+function personName(life: Life, salt: number): string {
+  const index = mixSeed(life.setup.seed || 1, salt) % NAMES.length;
+  const name = NAMES[index];
+  if (name !== life.name) return name;
+  return NAMES[(index + 1) % NAMES.length];
+}
+
+function noteGrudge(life: Life, name: string): void {
+  life.grudge = { name, from: life.name };
 }
 
 function mixSeed(seed: number, salt: number): number {

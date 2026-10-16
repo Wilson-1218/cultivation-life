@@ -27,14 +27,21 @@ export type BuriedRelic = {
   by: string;
 };
 
+export type NamedPerson = {
+  name: string;
+  from: string;
+};
+
 export type Setup = {
   world: WorldId;
   cohort: CohortId;
   pace: PaceId;
   seed: number;
-  /** 只影響這一世的開局。人口推演不讀這兩項。 */
+  /** 只影響這一世的開局。人口推演不讀這些。 */
   boost?: KarmaBoost | null;
   buried?: BuriedRelic | null;
+  foe?: NamedPerson | null;
+  haunt?: NamedPerson | null;
 };
 
 export const WORLDS: Record<

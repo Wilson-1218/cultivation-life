@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { BuriedRelic, KarmaBoost, RealmId, RootId, WorldId } from "@/lib/world";
+import type { BuriedRelic, KarmaBoost, NamedPerson, RealmId, RootId, WorldId } from "@/lib/world";
 
 export type PastLife = {
   id: string;
@@ -72,13 +72,32 @@ export type KarmaState = {
   points: number;
   boost: KarmaBoost | null;
   buried: BuriedRelic | null;
+  foe: NamedPerson | null;
+  haunt: NamedPerson | null;
   grantedId: string;
 };
 
 const KARMA_KEY = "baiyi-xiuxian-karma-v1";
 const KARMA_EVENT = "baiyi-karma-change";
 
-const EMPTY_KARMA: KarmaState = { points: 0, boost: null, buried: null, grantedId: "" };
+const EMPTY_KARMA: KarmaState = {
+  points: 0,
+  boost: null,
+  buried: null,
+  foe: null,
+  haunt: null,
+  grantedId: "",
+};
+
+function parsePerson(value: unknown): NamedPerson | null {
+  if (!value || typeof value !== "object") return null;
+  const person = value as Partial<NamedPerson>;
+  if (typeof person.name !== "string" || !person.name.trim()) return null;
+  return {
+    name: person.name.trim().slice(0, 24),
+    from: typeof person.from === "string" ? person.from.trim().slice(0, 48) : "",
+  };
+}
 
 function readKarmaRaw(): string {
   try {
@@ -112,6 +131,8 @@ function parseKarma(raw: string): KarmaState {
               by: typeof parsed.buried.by === "string" ? parsed.buried.by : "",
             }
           : null,
+      foe: parsePerson(parsed.foe),
+      haunt: parsePerson(parsed.haunt),
       grantedId: typeof parsed.grantedId === "string" ? parsed.grantedId : "",
     };
   } catch {
@@ -123,13 +144,21 @@ export function readKarma(): KarmaState {
   return parseKarma(readKarmaRaw());
 }
 
-export function grantKarma(input: { id: string; points: number; bury: BuriedRelic | null }): KarmaState {
+export function grantKarma(input: {
+  id: string;
+  points: number;
+  bury: BuriedRelic | null;
+  foe: NamedPerson | null;
+  haunt: NamedPerson | null;
+}): KarmaState {
   const current = readKarma();
   if (current.grantedId === input.id) return current;
   const next: KarmaState = {
     points: Math.max(0, Math.floor(input.points)),
     boost: null,
     buried: input.bury ?? current.buried,
+    foe: input.foe,
+    haunt: input.haunt,
     grantedId: input.id,
   };
   writeKarma(next);
@@ -143,16 +172,45 @@ export function spendKarma(boost: KarmaBoost): boolean {
   return true;
 }
 
-export function consumeKarma(): { boost: KarmaBoost | null; buried: BuriedRelic | null } {
+export function consumeKarma(): {
+  boost: KarmaBoost | null;
+  buried: BuriedRelic | null;
+  foe: NamedPerson | null;
+  haunt: NamedPerson | null;
+} {
   const current = readKarma();
-  writeKarma({ points: 0, boost: null, buried: current.buried, grantedId: "" });
-  return { boost: current.boost, buried: current.buried };
+  writeKarma({
+    points: 0,
+    boost: null,
+    buried: current.buried,
+    foe: current.foe,
+    haunt: current.haunt,
+    grantedId: "",
+  });
+  return {
+    boost: current.boost,
+    buried: current.buried,
+    foe: current.foe,
+    haunt: current.haunt,
+  };
 }
 
 export function clearBuried(): void {
   const current = readKarma();
   if (!current.buried) return;
   writeKarma({ ...current, buried: null });
+}
+
+export function clearFoe(): void {
+  const current = readKarma();
+  if (!current.foe) return;
+  writeKarma({ ...current, foe: null });
+}
+
+export function clearHaunt(): void {
+  const current = readKarma();
+  if (!current.haunt) return;
+  writeKarma({ ...current, haunt: null });
 }
 
 export function useKarma(): KarmaState | null {

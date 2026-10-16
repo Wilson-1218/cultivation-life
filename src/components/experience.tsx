@@ -13,6 +13,8 @@ import {
   autoChoiceId,
   autoFocus,
   burialOf,
+  carryFoe,
+  carryHaunt,
   createLife,
   finishMortal,
   heavenPoints,
@@ -21,7 +23,7 @@ import {
   toggleStar,
   type Life,
 } from "@/lib/engine";
-import { clearBuried, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
+import { clearBuried, clearFoe, clearHaunt, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
 import {
   PACES,
   ROOTS,
@@ -76,7 +78,11 @@ export function Experience() {
       setLife((current) => {
         if (!current || isFinished(current)) return current;
         try {
-          if (current.pending?.type === "choice") return applyChoice(current, autoChoiceId(current));
+          if (current.pending?.type === "choice") {
+            const choiceId = autoChoiceId(current);
+            settleCarry(choiceId);
+            return applyChoice(current, choiceId);
+          }
           if (current.pending?.type === "reflect") return applyReflection(current, "");
           return advance({ ...current, focus: autoFocus(current) });
         } catch {
@@ -91,7 +97,13 @@ export function Experience() {
   function remember(current: Life) {
     const line = current.reflections.find((item) => item.id === "farewell")?.text ?? "";
     upsertPast(toPast(current, line));
-    grantKarma({ id: current.id, points: heavenPoints(current), bury: burialOf(current) });
+    grantKarma({
+      id: current.id,
+      points: heavenPoints(current),
+      bury: burialOf(current),
+      foe: carryFoe(current),
+      haunt: carryHaunt(current),
+    });
   }
 
   function begin(nextSetup: Setup) {
@@ -110,7 +122,14 @@ export function Experience() {
 
   function startNext(seed: number) {
     const carried = consumeKarma();
-    begin({ ...setup, seed, boost: carried.boost, buried: carried.buried });
+    begin({
+      ...setup,
+      seed,
+      boost: carried.boost,
+      buried: carried.buried,
+      foe: carried.foe,
+      haunt: carried.haunt,
+    });
   }
 
   function finishFlash() {
@@ -220,7 +239,7 @@ export function Experience() {
         run((current) => advance(current));
       }}
       onChoice={(id) => {
-        if (id.startsWith("dig-past:dig")) clearBuried();
+        settleCarry(id);
         run((current) => applyChoice(current, id));
       }}
       onReflect={(text) => run((current) => applyReflection(current, text))}
@@ -232,6 +251,12 @@ export function Experience() {
       }}
     />
   );
+}
+
+function settleCarry(id: string) {
+  if (id.startsWith("dig-past:dig")) clearBuried();
+  if (id.startsWith("grudge:")) clearFoe();
+  if (id.startsWith("haunt-voice:")) clearHaunt();
 }
 
 function toPast(life: Life, line: string): PastLife {
