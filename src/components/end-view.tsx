@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { CompanionLife } from "@/components/companion-life";
 import { RealmLadder } from "@/components/realm-ladder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type Life } from "@/lib/engine";
+import { type Companion, type Life } from "@/lib/engine";
 import {
   ROOTS,
   WORLDS,
@@ -29,6 +30,7 @@ export function EndView({
   const existing = life.reflections.find((item) => item.id === "farewell")?.text ?? "";
   const [draft, setDraft] = useState(existing);
   const [saved, setSaved] = useState(Boolean(existing));
+  const [reading, setReading] = useState<Companion | null>(null);
   const realm = realmById(life.realm);
   const root = ROOTS[life.root];
   const starred = life.log.filter((entry) => entry.starred);
@@ -42,7 +44,7 @@ export function EndView({
       </h1>
       <p className="mt-4 text-lg leading-8">
         {life.ending === "edge"
-          ? `修為停在化神之前。再往上，這一輪不寫。靈根從入道起就是${root.name}。`
+          ? `${life.name}把化神走到這一輪的盡頭，${life.age}歲還活著。再往上不寫。靈根從入道起就是${root.name}。`
           : `${life.cause}。最後停在${realm.name}。靈根從入道起就是${root.name}，選擇沒有改過它。`}
       </p>
 
@@ -66,14 +68,17 @@ export function EndView({
         <ul className="mt-3 flex flex-col gap-3">
           {life.companions.map((companion) => (
             <li key={companion.name} className="border-b border-border pb-3 text-sm leading-7">
-              <span className="font-semibold">{companion.name}</span>
-              <span className="text-muted-foreground">
-                {" "}
-                · {ROOTS[companion.root].name} · {companion.region} ·{" "}
-                {companion.ending === "edge"
-                  ? `還活著，${companion.finalAge}歲，停在化神之前`
-                  : `${companion.finalAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`}
-              </span>
+              <button type="button" className="text-left" onClick={() => setReading(companion)}>
+                <span className="font-semibold">{companion.name}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {ROOTS[companion.root].name} · {companion.region} ·{" "}
+                  {companion.ending === "edge"
+                    ? `還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`
+                    : `${companion.finalAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`}
+                </span>
+                <span className="mt-1 block text-[#9c2f2a]">看這一生</span>
+              </button>
             </li>
           ))}
         </ul>
@@ -140,6 +145,7 @@ export function EndView({
         </Button>
       </div>
       <p className="mt-6 text-xs text-muted-foreground">命籤 {life.id}</p>
+      <CompanionLife companion={reading} onClose={() => setReading(null)} />
     </main>
   );
 }

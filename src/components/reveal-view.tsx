@@ -23,7 +23,7 @@ export function RevealView({ life, onStart }: { life: Life; onStart: () => void 
       <p className="mt-2 text-sm text-muted-foreground">八十億人裡，與你同一檔靈根的人。</p>
       <p className="mt-6 max-w-xl text-lg leading-8">{life.origin}</p>
       <p className="mt-4 text-sm leading-7 text-muted-foreground">
-        同一息還有 {life.companions.map((item) => item.name).join("、")}。他們的結果以後才攤開。
+        同一息還有 {life.companions.map((item) => item.name).join("、")}。走下去之後，可以點開看他們的一生。
       </p>
       <Button className="mt-8 h-12 w-full px-6 text-base sm:w-auto" onClick={onStart}>
         把這一生走下去

@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { clearPast, usePastLives } from "@/lib/storage";
+import { CENSUS_HITS, CENSUS_META } from "@/lib/census-data";
 import {
   COHORTS,
   PACES,
@@ -19,10 +20,13 @@ import {
   ROOT_ORDER,
   ROOTS,
   WORLDS,
+  censusTotal,
+  formatCount,
   formatPeople,
   rootPopulation,
   type CohortId,
   type PaceId,
+  type RealmId,
   type WorldId,
 } from "@/lib/world";
 import { cn } from "@/lib/utils";
@@ -88,7 +92,7 @@ export function IntroView({
             })}
           </ul>
           <p className="mt-4 text-sm leading-7 text-muted-foreground">
-            約{formatPeople(Math.round(ROOTS.wei.share * POPULATION))}人是偽靈根。築基大約一百四十人裡一個，八十億乘上去仍有{formatPeople(REALMS.find((realm) => realm.id === "foundation")?.stock ?? 0)}。結丹才少到可以被稱作一方人物。
+            約{formatPeople(Math.round(ROOTS.wei.share * POPULATION))}人是偽靈根。築基是{peoplePer(realmStock("foundation"))}，結丹是{peoplePer(realmStock("core"))}，元嬰是{peoplePer(realmStock("nascent"))}，化神是{peoplePer(realmStock("spirit"))}。越往上，壽元和靈石把人卡得越死。
           </p>
         </div>
         <aside className="border border-border bg-card p-4 sm:p-5">
@@ -277,6 +281,16 @@ function Option<T extends string>({
   );
 }
 
+function realmStock(id: RealmId): number {
+  return REALMS.find((realm) => realm.id === id)?.stock ?? 0;
+}
+
+function peoplePer(stock: number): string {
+  if (stock <= 0) return "這次抽樣裡沒有";
+  const ratio = Math.max(1, Math.round(POPULATION / stock));
+  return `${formatCount(ratio)}人裡一個`;
+}
+
 function Note({ title, body }: { title: string; body: string }) {
   return (
     <div>
@@ -301,15 +315,24 @@ function NumbersDialog() {
           <p>
             靈根比例是這頁先定的：偽靈根 {formatPeople(rootPopulation("wei"))}，真靈根{" "}
             {formatPeople(rootPopulation("zhen"))}，天靈根 {formatPeople(rootPopulation("tian"))}，變異靈根{" "}
-            {formatPeople(rootPopulation("bian"))}。
+            {formatPeople(rootPopulation("bian"))}。境界人數不是另外填的。
           </p>
           <p>
-            一生停在煉氣哪一層、大約多少人摸到築基，是用同一套規則反覆走之後的大致結果。偽靈根多半停在初期或中期；真靈根多半到後期；天靈根常常走到築基關前，過去的仍然是少數。
+            算法：世間用當世，人都從這一息才入道起算。四種靈根分開走，因為高境界幾乎不出在偽靈根。偽靈根{" "}
+            {formatCount(CENSUS_META.perRoot.wei)} 世，真靈根 {formatCount(CENSUS_META.perRoot.zhen)} 世，天靈根{" "}
+            {formatCount(CENSUS_META.perRoot.tian)} 世，變異靈根 {formatCount(CENSUS_META.perRoot.bian)} 世。每一世用頁面上的自動抉擇走完：分岔就在當下的選項裡隨機挑一個，重心按當時的靈石、心境、見識來選。一年走一步，直到壽元盡，或化神走到這一輪寫到的盡頭。
           </p>
           <p>
-            結丹與元嬰少到單次抽樣不穩。這一頁把結丹寫成約 {formatPeople(96_000)}、元嬰約 480，用來表示「少到可以當一方人物」。化神只在極少的情況點到，不展開。
+            只記最後停在哪一層。每檔除以自己的樣本數，再乘上這種靈根在八十億人裡的比例，四檔加總。小數用最大餘數法收成整數，八層加起來是{" "}
+            {formatPeople(censusTotal())}。
           </p>
-          <p>打開頁面後的入道與壽盡，是按平均壽元粗算的每秒人數，從你打開這頁起算。</p>
+          <p>
+            這次樣本裡，天靈根停在結丹 {formatCount(CENSUS_HITS.tian.core)} 世、元嬰 {formatCount(CENSUS_HITS.tian.nascent)}{" "}
+            世、化神 {formatCount(CENSUS_HITS.tian.spirit)} 世。換成全體之後，結丹 {formatPeople(realmStock("core"))}，元嬰{" "}
+            {formatPeople(realmStock("nascent"))}，化神 {formatPeople(realmStock("spirit"))}。偽靈根的樣本停在煉氣初期{" "}
+            {formatCount(CENSUS_HITS.wei["qi-early"])} 世、中期 {formatCount(CENSUS_HITS.wei["qi-mid"])} 世。
+          </p>
+          <p>打開頁面後的入道與壽盡，是按平均壽元粗算的每秒人數，從你打開這頁起算。跟上面的一生落點不是同一筆帳。</p>
         </div>
       </DialogContent>
     </Dialog>

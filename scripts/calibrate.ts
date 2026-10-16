@@ -76,6 +76,7 @@ function estimateLiving(lives: Life[]) {
     foundation: 0,
     core: 0,
     nascent: 0,
+    spirit: 0,
   };
   let totalYears = 0;
   for (const life of lives) {

@@ -1,3 +1,5 @@
+import { CENSUS_STOCKS } from "./census-data";
+
 export const POPULATION = 8_000_000_000;
 
 export type WorldId = "past" | "now" | "future";
@@ -12,8 +14,9 @@ export type RealmId =
   | "qi-peak"
   | "foundation"
   | "core"
-  | "nascent";
-export type GateId = "foundation" | "core" | "nascent";
+  | "nascent"
+  | "spirit";
+export type GateId = "foundation" | "core" | "nascent" | "spirit";
 
 export type Setup = {
   world: WorldId;
@@ -180,7 +183,7 @@ export const ROOTS: Record<
     name: "偽靈根",
     share: 0.816,
     speed: 1.32,
-    gates: { foundation: 0.028, core: 0.006, nascent: 0.002 },
+    gates: { foundation: 0.028, core: 0.006, nascent: 0.002, spirit: 0.0004 },
     exam: 0.08,
     flavor: "這種根修得最慢。每進一步，都要用年份換。",
   },
@@ -189,7 +192,7 @@ export const ROOTS: Record<
     name: "真靈根",
     share: 0.158,
     speed: 3.05,
-    gates: { foundation: 0.08, core: 0.012, nascent: 0.002 },
+    gates: { foundation: 0.08, core: 0.012, nascent: 0.004, spirit: 0.0012 },
     exam: 0.34,
     flavor: "不算差。真正缺的不是這點資質，是後面的丹、席位和靈脈。",
   },
@@ -198,7 +201,7 @@ export const ROOTS: Record<
     name: "天靈根",
     share: 0.022,
     speed: 6.1,
-    gates: { foundation: 0.11, core: 0.018, nascent: 0.003 },
+    gates: { foundation: 0.11, core: 0.05, nascent: 0.22, spirit: 0.24 },
     exam: 0.72,
     flavor: "測的人會多看一眼。根好，只是讓你更快走到門前面。門後的名額不會因此變多。",
   },
@@ -207,26 +210,32 @@ export const ROOTS: Record<
     name: "變異靈根",
     share: 0.004,
     speed: 5.05,
-    gates: { foundation: 0.09, core: 0.016, nascent: 0.003 },
+    gates: { foundation: 0.09, core: 0.036, nascent: 0.14, spirit: 0.16 },
     exam: 0.4,
     flavor: "坊市通用的功法多半對不上。快不快，要看路認不認你。",
   },
 };
+
+const REALM_ROWS: readonly { id: RealmId; name: string; lifespan: number }[] = [
+  { id: "qi-early", name: "煉氣初期", lifespan: 100 },
+  { id: "qi-mid", name: "煉氣中期", lifespan: 118 },
+  { id: "qi-late", name: "煉氣後期", lifespan: 136 },
+  { id: "qi-peak", name: "煉氣圓滿", lifespan: 156 },
+  { id: "foundation", name: "築基", lifespan: 286 },
+  { id: "core", name: "結丹", lifespan: 640 },
+  { id: "nascent", name: "元嬰", lifespan: 1480 },
+  { id: "spirit", name: "化神", lifespan: 3400 },
+];
 
 export const REALMS: readonly {
   id: RealmId;
   name: string;
   stock: number;
   lifespan: number;
-}[] = [
-  { id: "qi-early", name: "煉氣初期", stock: 1_983_975_904, lifespan: 100 },
-  { id: "qi-mid", name: "煉氣中期", stock: 4_631_943_744, lifespan: 118 },
-  { id: "qi-late", name: "煉氣後期", stock: 823_989_993, lifespan: 136 },
-  { id: "qi-peak", name: "煉氣圓滿", stock: 503_993_879, lifespan: 156 },
-  { id: "foundation", name: "築基", stock: 56_000_000, lifespan: 286 },
-  { id: "core", name: "結丹", stock: 96_000, lifespan: 640 },
-  { id: "nascent", name: "元嬰", stock: 480, lifespan: 1480 },
-];
+}[] = REALM_ROWS.map((realm) => ({
+  ...realm,
+  stock: CENSUS_STOCKS[realm.id],
+}));
 
 export const TUNING = {
   eventChance: 0.105,
@@ -236,10 +245,16 @@ export const TUNING = {
   foundationAt: 358,
   coreAt: 820,
   nascentAt: 1040,
-  edgeAt: 1240,
+  spiritAt: 1160,
+  spiritDone: 2280,
+  progressCap: 2800,
   foundationCost: 170,
   coreCost: 920,
   nascentCost: 4200,
+  spiritCost: 8600,
+  spiritUpkeep: 5,
+  spiritUpkeepStable: 2,
+  spiritSoft: 1680,
   sectPay: 16,
 };
 
@@ -335,19 +350,22 @@ function trimNumber(n: number, digits: number): string {
 export function gateCost(kind: GateId): number {
   if (kind === "foundation") return TUNING.foundationCost;
   if (kind === "core") return TUNING.coreCost;
-  return TUNING.nascentCost;
+  if (kind === "nascent") return TUNING.nascentCost;
+  return TUNING.spiritCost;
 }
 
 export function gateLabel(kind: GateId): string {
   if (kind === "foundation") return "築基";
   if (kind === "core") return "結丹";
-  return "元嬰";
+  if (kind === "nascent") return "元嬰";
+  return "化神";
 }
 
 export function nextRealm(kind: GateId): RealmId {
   if (kind === "foundation") return "foundation";
   if (kind === "core") return "core";
-  return "nascent";
+  if (kind === "nascent") return "nascent";
+  return "spirit";
 }
 
 export function stockAbove(id: RealmId): number {

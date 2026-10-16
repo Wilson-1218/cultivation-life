@@ -20,7 +20,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { companionNow, type Life } from "@/lib/engine";
+import { CompanionLife } from "@/components/companion-life";
+import { companionNow, type Companion, type Life } from "@/lib/engine";
 import {
   FOCUS_ORDER,
   FOCUSES,
@@ -62,6 +63,7 @@ export function LifeView({
   onAbandon: () => void;
 }) {
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [reading, setReading] = useState<Companion | null>(null);
   const reflectId = life.pending?.type === "reflect" ? life.pending.id : "";
   const [draftState, setDraftState] = useState({ id: "", text: "" });
   const draft = draftState.id === reflectId ? draftState.text : "";
@@ -284,14 +286,26 @@ export function LifeView({
             <h2 className="text-sm text-muted-foreground">同一息入道</h2>
             <ul className="mt-2 flex flex-col gap-2">
               {life.companions.map((companion) => (
-                <li key={companion.name} className="text-sm leading-6">
-                  {companionNow(companion, life.age).text}
+                <li key={companion.name}>
+                  <button
+                    type="button"
+                    className="w-full rounded-sm text-left text-sm leading-6 hover:text-[#9c2f2a]"
+                    onClick={() => {
+                      if (auto && !paused) onPause();
+                      setReading(companion);
+                    }}
+                  >
+                    {companionNow(companion, life.age).text}
+                    <span className="mt-0.5 block text-xs text-[#9c2f2a]">看這一生</span>
+                  </button>
                 </li>
               ))}
             </ul>
           </div>
         </aside>
       </div>
+
+      <CompanionLife companion={reading} onClose={() => setReading(null)} />
 
       <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
         <DialogContent>

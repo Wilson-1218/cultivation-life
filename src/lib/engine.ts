@@ -58,11 +58,17 @@ export type Span = {
   toAge: number | null;
 };
 
+export type Chapter = {
+  age: number;
+  text: string;
+};
+
 export type Companion = {
   name: string;
   root: RootId;
   region: string;
   spans: Span[];
+  chapters: Chapter[];
   deathAge: number | null;
   ending: "dead" | "edge";
   cause: string;
@@ -104,6 +110,9 @@ export type Life = {
   attempts: Record<GateId, number>;
   succeeded: Record<GateId, boolean>;
   breakthroughAge: number | null;
+  spiritSince: number | null;
+  spiritStable: boolean;
+  spiritSettled: boolean;
   seenEvents: string[];
   seenReflect: string[];
   pending: Pending | null;
@@ -151,7 +160,15 @@ const REFLECTS: { id: string; prompt: string; test: (life: Life) => boolean }[] 
     test: (life) =>
       life.breakthroughAge !== null &&
       life.age >= life.breakthroughAge + 10 &&
-      (life.realm === "foundation" || life.realm === "core" || life.realm === "nascent"),
+      (life.realm === "foundation" ||
+        life.realm === "core" ||
+        life.realm === "nascent" ||
+        life.realm === "spirit"),
+  },
+  {
+    id: "spirit-years",
+    prompt: "化神之後，壽元長得不像人。你想把這段日子用來衝，還是用來站住？",
+    test: (life) => life.spiritSince !== null && life.age >= life.spiritSince + 12,
   },
 ];
 
@@ -206,9 +223,12 @@ export function createLife(
     relative,
     senior: false,
     gateLockUntil: 0,
-    attempts: { foundation: 0, core: 0, nascent: 0 },
-    succeeded: { foundation: false, core: false, nascent: false },
+    attempts: { foundation: 0, core: 0, nascent: 0, spirit: 0 },
+    succeeded: { foundation: false, core: false, nascent: false, spirit: false },
     breakthroughAge: null,
+    spiritSince: null,
+    spiritStable: false,
+    spiritSettled: false,
     seenEvents: [],
     seenReflect: [],
     pending: null,
@@ -369,7 +389,7 @@ export function steadyChoiceId(life: Life): string {
 export function runToEnd(life: Life, policy: "auto" | "steady" = "auto"): Life {
   let current = life;
   let guard = 0;
-  while (!isFinished(current) && guard < 6000) {
+  while (!isFinished(current) && guard < 20000) {
     if (current.pending?.type === "choice") {
       const choiceId = policy === "steady" ? steadyChoiceId(current) : autoChoiceId(current);
       current = applyChoice(current, choiceId);
@@ -417,7 +437,7 @@ export function companionNow(companion: Companion, age: number): {
     return {
       realm,
       alive: true,
-      text: `${companion.name} · ${root} · 還活著，停在化神之前`,
+      text: `${companion.name} · ${root} · 還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`,
     };
   }
   return {
@@ -429,7 +449,11 @@ export function companionNow(companion: Companion, age: number): {
 
 function stepYear(life: Life, rng: Rng, notes: string[]): StepResult {
   if (life.age >= life.lifespan) {
-    markDeath(life, "壽元耗盡");
+    const starved =
+      life.realm === "spirit" &&
+      life.stones < TUNING.spiritUpkeep &&
+      life.lifespan < realmById("spirit").lifespan - 30;
+    markDeath(life, starved ? "靈石斷供，化神反噬" : "壽元耗盡");
     return "dead";
   }
   const ratio = (life.age + 1) / life.lifespan;
@@ -456,9 +480,9 @@ function stepYear(life: Life, rng: Rng, notes: string[]): StepResult {
   life.years += 1;
   updateQi(life, notes);
 
-  if (life.realm === "nascent" && life.progress >= TUNING.edgeAt) {
+  if (life.realm === "spirit" && !life.spiritSettled && life.progress >= TUNING.spiritDone) {
     life.ending = "edge";
-    life.cause = "停在化神之前";
+    life.cause = "化神這一層走到頭了";
     closeSpan(life, life.age);
     return "edge";
   }
@@ -491,15 +515,29 @@ function applyYear(life: Life, rng: Rng, notes: string[]): void {
   const stoneFactor = 0.46 + Math.min(0.7, Math.log10(life.stones + 1) / 5.4);
   const lingFactor = 0.66 + life.ling / 190;
   const hunger = broke ? 0.62 : 1;
+  if (life.realm === "spirit") {
+    const upkeep = life.spiritStable ? TUNING.spiritUpkeepStable : TUNING.spiritUpkeep;
+    if (life.stones >= upkeep) {
+      life.stones -= upkeep;
+    } else {
+      life.stones = 0;
+      life.lifespan = Math.max(life.age + 1, life.lifespan - 3);
+      if (!notes.includes("靈石不夠喂這一層，壽元往回縮。")) {
+        notes.push("靈石不夠喂這一層，壽元往回縮。");
+      }
+    }
+  }
   const soft =
-    life.realm === "nascent"
-      ? 1200
-      : life.realm === "core"
-        ? 1000
-        : life.realm === "foundation"
-          ? 720
-          : life.root === "wei"
-            ? 115
+    life.realm === "spirit"
+      ? TUNING.spiritSoft
+      : life.realm === "nascent"
+        ? 1200
+        : life.realm === "core"
+          ? 1000
+          : life.realm === "foundation"
+            ? 720
+            : life.root === "wei"
+              ? 115
               : life.root === "zhen"
                 ? 300
                 : life.root === "bian"
@@ -514,8 +552,9 @@ function applyYear(life: Life, rng: Rng, notes: string[]): void {
     world.progress *
     hunger *
     drag *
+    (life.spiritSettled ? 0.12 : 1) *
     (0.86 + rng.next() * 0.26);
-  life.progress = clamp(life.progress + gain, 0, 1300);
+  life.progress = clamp(life.progress + gain, 0, TUNING.progressCap);
   if (broke && !notes.includes("靈石見底，吐納發虛。")) {
     notes.push("靈石見底，吐納發虛。");
   }
@@ -641,13 +680,16 @@ function resolveGate(life: Life, rng: Rng, kind: GateId, choiceId: string): void
     if (kind === "foundation" && life.breakthroughAge === null) {
       life.breakthroughAge = life.age;
     }
+    if (kind === "spirit") life.spiritSince = life.age;
     life.ling = clamp(life.ling - 12);
     life.heart = clamp(life.heart - 6);
     life.gateLockUntil = life.age + 3;
     pushLog(
       life,
       "choice",
-      `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。靈力被抽空一截，人還在。`,
+      kind === "spirit"
+        ? `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。這一層每年都要喂靈石，斷了會反噬。`
+        : `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。靈力被抽空一截，人還在。`,
     );
     return;
   }
@@ -686,7 +728,9 @@ function gateChance(life: Life, kind: GateId, paying: boolean): number {
   if (life.senior) chance *= 1.12;
   if (life.ling < 25) chance *= 0.72;
   chance *= WORLDS[life.setup.world].gate;
-  return clamp(chance, 0.004, 0.74);
+  const floor =
+    kind === "foundation" ? 0.004 : kind === "core" ? 0.0015 : kind === "nascent" ? 0.0008 : 0.0003;
+  return clamp(chance, floor, 0.74);
 }
 
 function availableGate(life: Life): GateId | null {
@@ -709,10 +753,18 @@ function availableGate(life: Life): GateId | null {
   if (
     life.realm === "core" &&
     life.progress >= TUNING.nascentAt &&
-    life.attempts.nascent < 1 &&
+    life.attempts.nascent < 2 &&
     !life.succeeded.nascent
   ) {
     return "nascent";
+  }
+  if (
+    life.realm === "nascent" &&
+    life.progress >= TUNING.spiritAt &&
+    life.attempts.spirit < 2 &&
+    !life.succeeded.spirit
+  ) {
+    return "spirit";
   }
   return null;
 }
@@ -750,7 +802,8 @@ function markDeath(life: Life, cause: string): void {
 function progressAfter(kind: GateId): number {
   if (kind === "foundation") return 530;
   if (kind === "core") return 790;
-  return 970;
+  if (kind === "nascent") return 970;
+  return 1400;
 }
 
 function composeChapter(
@@ -771,7 +824,7 @@ function composeChapter(
     return `${span}${focusLine}${extra}${life.cause}。你停在${realmById(life.realm).name}。`;
   }
   if (result === "edge") {
-    return `${span}${focusLine}${extra}你還活著，修為停在化神之前。再往上，這一輪不寫。`;
+    return `${span}${focusLine}${extra}你還活著。化神這一層走到頭了，壽元還沒盡。再往上，這一輪不寫。`;
   }
   return `${span}${focusLine}${extra}`;
 }
@@ -1265,6 +1318,72 @@ const EVENTS: LifeEvent[] = [
       pushLog(life, "choice", "你看了一次別人怎麼把靈力壓穩。懂了一點。下一次衝關，手不會那麼慌。");
     },
   },
+  {
+    id: "spirit-bottleneck",
+    when: (life) => life.spiritSince !== null && life.age >= life.spiritSince + 28,
+    make: (life) => ({
+      type: "choice",
+      id: "spirit-bottleneck",
+      title: "化神的瓶頸",
+      body: `進這一層已經 ${life.age - (life.spiritSince ?? life.age)} 年。壽元記到 ${life.lifespan} 歲，可是每年都在吃靈石。再往上，修為會被這層本身拖住。你手上還有 ${formatCount(life.stones)} 塊。`,
+      choices: [
+        {
+          id: "spirit-bottleneck:steady",
+          label: "花靈石把這一層穩住",
+          hint: "有靈石就花掉一大截，往後每年少喂一點。不往上衝。",
+        },
+        {
+          id: "spirit-bottleneck:push",
+          label: "把剩下的靈石壓進去",
+          hint: "修為會猛跳一截，口袋見底，心境也可能撐不住。",
+        },
+        {
+          id: "spirit-bottleneck:stop",
+          label: "停在這一層",
+          hint: "不再往上。把剩下的壽元過完。",
+        },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      if (choiceId.endsWith(":stop")) {
+        life.spiritSettled = true;
+        life.heart = clamp(life.heart + 4);
+        pushLog(life, "choice", "你停手。化神的壽元還在走，再往上不走了。每年仍要喂靈石，喂到壽元盡。");
+        return;
+      }
+      if (choiceId.endsWith(":steady")) {
+        const cost = Math.min(life.stones, 2400);
+        if (cost <= 0) {
+          pushLog(life, "choice", "你想穩住，口袋卻是空的。瓶頸還在，每年照舊吃壽元。");
+          return;
+        }
+        life.stones -= cost;
+        life.spiritStable = true;
+        life.spiritSettled = true;
+        pushLog(
+          life,
+          "choice",
+          `你花了 ${formatCount(cost)} 塊靈石，把化神穩住。瓶頸沒有破。往後每年少喂一點，這一層就這樣過。`,
+        );
+        return;
+      }
+      const spent = life.stones;
+      life.stones = 0;
+      life.progress = clamp(life.progress + 220, 0, TUNING.progressCap);
+      life.ling = clamp(life.ling - 16);
+      life.heart = clamp(life.heart - 12);
+      if (life.heart < 22 && rng.next() < 0.35) {
+        markDeath(life, "走火，心境沒有撐住");
+        pushLog(life, "choice", `你把 ${formatCount(spent)} 塊靈石全壓進瓶頸。靈力衝上去的同時，心境裂了。你停在化神。`);
+        return;
+      }
+      pushLog(
+        life,
+        "choice",
+        `你把 ${formatCount(spent)} 塊靈石全壓進去。修為猛地抬高一截，口袋空了。這一層還在吃壽元，也還在吃靈石。`,
+      );
+    },
+  },
 ];
 
 function writeOrigin(life: Life): string {
@@ -1329,12 +1448,34 @@ function summarizeCompanion(life: Life): Companion {
     root: life.root,
     region: life.region,
     spans: life.spans.map((span) => ({ ...span })),
+    chapters: companionChapters(life),
     deathAge: life.dead ? life.age : null,
     ending: life.ending === "edge" ? "edge" : "dead",
     cause: life.cause,
     finalRealm: life.realm,
     finalAge: life.age,
   };
+}
+
+function companionChapters(life: Life): Chapter[] {
+  const origin = { age: 16, text: life.origin };
+  const milestones = life.log.filter(
+    (entry) =>
+      entry.kind !== "chapter" ||
+      /停在|成了|沒有成|走到頭|反噬|境界跨到/.test(entry.text),
+  );
+  const last = life.log[life.log.length - 1];
+  const merged = [origin, ...milestones.map((entry) => ({ age: entry.age, text: entry.text }))];
+  if (last && merged[merged.length - 1]?.text !== last.text) {
+    merged.push({ age: last.age, text: last.text });
+  }
+  const unique: Chapter[] = [];
+  for (const item of merged) {
+    if (unique.some((have) => have.age === item.age && have.text === item.text)) continue;
+    unique.push(item);
+  }
+  if (unique.length <= 16) return unique;
+  return [unique[0], ...unique.slice(-15)];
 }
 
 function pushLog(life: Life, kind: LogEntry["kind"], text: string): void {
@@ -1353,12 +1494,15 @@ function nextLogId(life: Life): string {
 }
 
 function trimLog(life: Life): void {
-  if (life.log.length <= 32) return;
-  const starred = life.log.filter((entry) => entry.starred);
-  const recent = life.log.slice(-24);
-  const merged = [...life.log];
-  const keep = new Set([...starred, ...recent].map((entry) => entry.id));
-  life.log = merged.filter((entry) => keep.has(entry.id)).slice(-40);
+  if (life.log.length <= 40) return;
+  const keep = new Set<string>();
+  for (const entry of life.log) {
+    if (entry.starred || entry.kind === "choice" || entry.kind === "pause" || entry.kind === "system") {
+      keep.add(entry.id);
+    }
+  }
+  for (const entry of life.log.slice(-16)) keep.add(entry.id);
+  life.log = life.log.filter((entry) => keep.has(entry.id)).slice(-48);
 }
 
 function pick<T>(rng: Rng, items: readonly T[]): T {

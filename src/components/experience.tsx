@@ -218,7 +218,7 @@ function toPast(life: Life, line: string): PastLife {
     realm: life.realm,
     realmName: realmById(life.realm).name,
     age: life.age,
-    cause: life.cause || (life.ending === "edge" ? "停在化神之前" : ""),
+    cause: life.cause || (life.ending === "edge" ? "化神這一層走到頭了" : ""),
     line,
     world: life.setup.world,
     worldName: WORLDS[life.setup.world].name,
