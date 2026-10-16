@@ -2,18 +2,13 @@
 
 import { useState } from "react";
 import { CompanionLife } from "@/components/companion-life";
+import { KarmaSpend } from "@/components/karma-spend";
 import { Mark, WithMark } from "@/components/marks";
 import { RealmLadder } from "@/components/realm-ladder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type Companion, type Life } from "@/lib/engine";
-import {
-  ROOTS,
-  WORLDS,
-  formatPeople,
-  realmById,
-  rootPopulation,
-} from "@/lib/world";
+import { epitaph, heavenPoints, karmaSentence, type Companion, type Life } from "@/lib/engine";
+import { ORIGINS, ROOTS, WORLDS, formatPeople, realmById, rootPopulation } from "@/lib/world";
 
 export function EndView({
   life,
@@ -44,28 +39,39 @@ export function EndView({
         {life.ending === "edge" ? `${life.name}還活著` : life.name}
       </h1>
       <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <WithMark name="realm">{realm.name}</WithMark>
-        <WithMark name="root">{root.name}</WithMark>
+        <WithMark name="realm">{life.mortal ? "凡人" : realm.name}</WithMark>
+        <WithMark name="root">{life.mortal ? "無靈根" : root.name}</WithMark>
         <WithMark name="life">
-          {life.age}歲 / {life.lifespan}
+          {life.mortal ? `${life.age}歲` : `${life.age}歲 / ${life.lifespan}`}
         </WithMark>
       </p>
       <p className="mt-4 text-lg leading-8">
-        {life.ending === "edge"
-          ? `${life.name}把化神走到這一輪的盡頭，${life.age}歲還活著。再往上不寫。靈根從入道起就是${root.name}。`
-          : `${life.cause}。最後停在${realm.name}。靈根從入道起就是${root.name}，選擇沒有改過它。`}
+        {life.mortal
+          ? `${life.cause}。這一生沒有進修途。出身是${ORIGINS[life.originId].name}。`
+          : life.ending === "edge"
+            ? `${life.name}把化神走到這一輪的盡頭，${life.age}歲還活著。再往上不寫。靈根從入道起就是${root.name}。`
+            : `${life.cause}。最後停在${realm.name}。靈根從入道起就是${root.name}，選擇沒有改過它。`}
       </p>
+      <Settlement life={life} />
 
-      <p className="mt-8 flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Mark name="realm" />
-        把一生停在{realm.name}的人
-      </p>
-      <p className="num mt-1 text-5xl font-semibold text-[#9c2f2a] sm:text-6xl">{formatPeople(realm.stock)}</p>
-      <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
-        你的靈根是{root.name}，這一檔約有 {formatPeople(rootPopulation(life.root))} 人。世間是
-        {WORLDS[life.setup.world].name}
-        {life.sect ? `，你進過${life.sect}` : "，你沒有進宗門"}。
-      </p>
+      {life.mortal ? (
+        <p className="mt-8 max-w-xl text-sm leading-7 text-muted-foreground">
+          這一生沒有停在修途的任何一層。下面的人數仍是原來那套八十億推演，不是這一世的落點。
+        </p>
+      ) : (
+        <>
+          <p className="mt-8 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Mark name="realm" />
+            把一生停在{realm.name}的人
+          </p>
+          <p className="num mt-1 text-5xl font-semibold text-[#9c2f2a] sm:text-6xl">{formatPeople(realm.stock)}</p>
+          <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+            你的靈根是{root.name}，這一檔約有 {formatPeople(rootPopulation(life.root))} 人。世間是
+            {WORLDS[life.setup.world].name}
+            {life.sect ? `，你進過${life.sect}` : "，你沒有進宗門"}。
+          </p>
+        </>
+      )}
 
       <section className="mt-8">
         <h2 className="flex items-center gap-1.5 text-base font-semibold">
@@ -73,18 +79,23 @@ export function EndView({
           往上還有多少人
         </h2>
         <div className="mt-3">
-          <RealmLadder current={life.realm} />
+          <RealmLadder current={life.mortal ? null : life.realm} />
         </div>
       </section>
 
       <section className="mt-8">
         <h2 className="flex items-center gap-1.5 text-base font-semibold">
           <Mark name="companion" />
-          同一息入道的三個人
+          同一息入道的四位
         </h2>
         <ul className="mt-3 flex flex-col gap-3">
           {life.companions.map((companion) => (
-            <li key={companion.name} className="border-b border-border pb-3 text-sm leading-7">
+            <li
+              key={companion.name}
+              className={`border-b border-border pb-3 text-sm leading-7 ${
+                companion.deathAge !== null && companion.deathAge <= life.age ? "text-muted-foreground opacity-70" : ""
+              }`}
+            >
               <button type="button" className="text-left" onClick={() => setReading(companion)}>
                 <span className="font-semibold">{companion.name}</span>
                 <span className="text-muted-foreground">
@@ -168,5 +179,48 @@ export function EndView({
       <p className="mt-6 text-xs text-muted-foreground">命籤 {life.id}</p>
       <CompanionLife companion={reading} onClose={() => setReading(null)} />
     </main>
+  );
+}
+
+function Settlement({ life }: { life: Life }) {
+  const gone = life.companions.filter((item) => item.deathAge !== null && item.deathAge <= life.age).length;
+  const realmName = life.mortal ? "凡人" : realmById(life.realm).name;
+  return (
+    <section className="mt-6 border border-[#9c2f2a]/40 bg-card p-4 sm:p-5">
+      <p className="text-sm tracking-[0.16em] text-[#9c2f2a]">結算</p>
+      <h2 className="mt-2 text-2xl font-semibold leading-snug break-words">{epitaph(life)}</h2>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-muted-foreground">境界</dt>
+          <dd>{realmName}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">享年</dt>
+          <dd className="num">{life.age}</dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-muted-foreground">死因</dt>
+          <dd>{life.cause || "還活著"}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">出身</dt>
+          <dd>{ORIGINS[life.originId].name}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">這一世的天道點數</dt>
+          <dd className="num">{heavenPoints(life)}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 text-sm leading-7">
+        四位道友裡，有 {gone} 位比你先走。
+        {life.mortal
+          ? "你沒有進那八層。八十億人裡，把一生停在煉氣的仍是多數。"
+          : `八十億人裡，把一生停在${realmName}的約有 ${formatPeople(realmById(life.realm).stock)}。`}
+      </p>
+      <p className="mt-3 text-sm leading-7">{karmaSentence(life)}</p>
+      <div className="mt-4 border-t border-border pt-4">
+        <KarmaSpend />
+      </div>
+    </section>
   );
 }

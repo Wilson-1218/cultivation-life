@@ -27,6 +27,7 @@ import {
   FOCUS_ORDER,
   FOCUSES,
   PACES,
+  ORIGINS,
   ROOTS,
   formatCount,
   formatPeople,
@@ -77,7 +78,7 @@ export function LifeView({
   const realm = realmById(life.realm);
 
   return (
-    <div className="min-h-dvh pb-28 md:pb-10">
+    <div className="min-h-dvh pb-8 md:pb-10">
       <header className="sticky top-0 z-20 border-b border-border bg-background">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <p className="text-sm tracking-[0.16em] text-[#9c2f2a]">80億人修仙</p>
@@ -127,7 +128,8 @@ export function LifeView({
               {life.name} · {life.region}
             </span>
             <WithMark name="life">{life.age}歲</WithMark>
-            <WithMark name="root">{ROOTS[life.root].name}</WithMark>
+            <WithMark name="root">{life.mortal ? "無靈根" : ROOTS[life.root].name}</WithMark>
+            <span>{ORIGINS[life.originId].name}</span>
             <span>{life.sect ? life.sect : "散修"}</span>
           </p>
           <h1 className="mt-2 flex items-center gap-2 text-4xl font-semibold sm:gap-3 sm:text-5xl">
@@ -137,6 +139,14 @@ export function LifeView({
           <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
             八十億人裡，約有 {formatPeople(realm.stock)} 人把一生停在{realm.name}。你現在在這一層。
           </p>
+          <FriendStrip
+            life={life}
+            className="mt-4 lg:hidden"
+            onOpen={(companion) => {
+              if (auto && !paused) onPause();
+              setReading(companion);
+            }}
+          />
 
           {latest ? (
             <article className="mt-8 border-t border-border pt-6" aria-live="polite">
@@ -239,7 +249,7 @@ export function LifeView({
               })}
             </div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{FOCUSES[life.focus].hint}</p>
-            <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background p-3 md:static md:z-auto md:mt-4 md:border-0 md:bg-transparent md:p-0">
+            <div className="mt-4">
               <Button
                 className="h-12 w-full px-6 text-base md:w-auto"
                 disabled={(!finished && Boolean(life.pending)) || (auto && !paused && !finished)}
@@ -319,32 +329,14 @@ export function LifeView({
               <RealmLadder current={life.realm} />
             </div>
           </div>
-          <div className="mt-6">
-            <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Mark name="companion" />
-              同一息入道
-            </h2>
-            <ul className="mt-2 flex flex-col gap-2">
-              {life.companions.map((companion) => (
-                <li key={companion.name}>
-                  <button
-                    type="button"
-                    className="w-full rounded-sm text-left text-sm leading-6 hover:text-[#9c2f2a]"
-                    onClick={() => {
-                      if (auto && !paused) onPause();
-                      setReading(companion);
-                    }}
-                  >
-                    {companionNow(companion, life.age).text}
-                    <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#9c2f2a]">
-                      <Mark name="companion" />
-                      看這一生
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FriendStrip
+            life={life}
+            onOpen={(companion) => {
+              if (auto && !paused) onPause();
+              setReading(companion);
+            }}
+            className="mt-6 hidden lg:block"
+          />
         </aside>
       </div>
 
@@ -424,6 +416,48 @@ function Tools({
         回到開場
       </Button>
     </>
+  );
+}
+
+function FriendStrip({
+  life,
+  onOpen,
+  className,
+}: {
+  life: Life;
+  onOpen: (companion: Companion) => void;
+  className?: string;
+}) {
+  return (
+    <section className={className}>
+      <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Mark name="companion" />
+        同歲的四位
+      </h2>
+      <ul className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
+        {life.companions.map((companion) => {
+          const now = companionNow(companion, life.age);
+          return (
+            <li key={companion.name}>
+              <button
+                type="button"
+                className={cn(
+                  "w-full min-w-0 rounded-sm border border-border px-2 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a] lg:border-0 lg:px-0 lg:py-0",
+                  !now.alive && "text-muted-foreground opacity-60",
+                )}
+                onClick={() => onOpen(companion)}
+              >
+                <span className="block break-words">{now.text}</span>
+                <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#9c2f2a]">
+                  <Mark name="companion" />
+                  {now.alive ? "看這一生" : "已死 · 看這一生"}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

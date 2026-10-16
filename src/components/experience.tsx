@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { EndView } from "@/components/end-view";
 import { IntroView } from "@/components/intro-view";
 import { LifeView } from "@/components/life-view";
-import { DrawingView, RevealView } from "@/components/reveal-view";
+import { DrawingView, FlashView, RevealView } from "@/components/reveal-view";
 import { Button } from "@/components/ui/button";
 import {
   advance,
@@ -12,13 +12,16 @@ import {
   applyReflection,
   autoChoiceId,
   autoFocus,
+  burialOf,
   createLife,
+  finishMortal,
+  heavenPoints,
   isFinished,
   randomSeed,
   toggleStar,
   type Life,
 } from "@/lib/engine";
-import { upsertPast, type PastLife } from "@/lib/storage";
+import { clearBuried, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
 import {
   PACES,
   ROOTS,
@@ -31,7 +34,7 @@ import {
   type WorldId,
 } from "@/lib/world";
 
-type Phase = "intro" | "drawing" | "reveal" | "life" | "end";
+type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
 
 const INITIAL: Setup = {
   world: "now",
@@ -88,6 +91,7 @@ export function Experience() {
   function remember(current: Life) {
     const line = current.reflections.find((item) => item.id === "farewell")?.text ?? "";
     upsertPast(toPast(current, line));
+    grantKarma({ id: current.id, points: heavenPoints(current), bury: burialOf(current) });
   }
 
   function begin(nextSetup: Setup) {
@@ -95,13 +99,27 @@ export function Experience() {
     setAuto(false);
     setPaused(false);
     try {
-      setLife(createLife(nextSetup));
+      setLife(createLife(nextSetup, { story: true }));
       setSetup(nextSetup);
       setPhase("drawing");
     } catch {
       setLife(null);
       setFault("這一世沒有抽成。");
     }
+  }
+
+  function startNext(seed: number) {
+    const carried = consumeKarma();
+    begin({ ...setup, seed, boost: carried.boost, buried: carried.buried });
+  }
+
+  function finishFlash() {
+    if (!life) return;
+    const done = life.mortal && !life.dead ? finishMortal(life) : life;
+    setLife(done);
+    remember(done);
+    setAuto(false);
+    setPhase("end");
   }
 
   function run(work: (current: Life) => Life) {
@@ -144,13 +162,18 @@ export function Experience() {
         onWorld={(world: WorldId) => setSetup((current) => ({ ...current, world }))}
         onCohort={(cohort: CohortId) => setSetup((current) => ({ ...current, cohort }))}
         onPace={(pace: PaceId) => setSetup((current) => ({ ...current, pace }))}
-        onBegin={() => begin({ ...setup, seed: randomSeed() })}
+        onBegin={() => startNext(randomSeed())}
       />
     );
   }
 
   if (phase === "drawing" || !life) return <DrawingView />;
-  if (phase === "reveal") return <RevealView life={life} onStart={() => setPhase("life")} />;
+  if (phase === "reveal") {
+    return <RevealView life={life} onStart={() => setPhase(life.mortal ? "flash" : "life")} />;
+  }
+  if (phase === "flash") {
+    return <FlashView lines={life.flash.length > 0 ? life.flash : ["沒有靈根。"]} onDone={finishFlash} />;
+  }
 
   if (phase === "end") {
     return (
@@ -169,7 +192,7 @@ export function Experience() {
             return next;
           });
         }}
-        onAgain={() => begin({ ...setup, seed: randomSeed() })}
+        onAgain={() => startNext(randomSeed())}
         onSame={() => begin(setup)}
         onIntro={() => setPhase("intro")}
       />
@@ -196,7 +219,10 @@ export function Experience() {
         }
         run((current) => advance(current));
       }}
-      onChoice={(id) => run((current) => applyChoice(current, id))}
+      onChoice={(id) => {
+        if (id.startsWith("dig-past:dig")) clearBuried();
+        run((current) => applyChoice(current, id));
+      }}
       onReflect={(text) => run((current) => applyReflection(current, text))}
       onStar={(id) => setLife((current) => (current ? toggleStar(current, id) : current))}
       onAbandon={() => {
@@ -214,7 +240,7 @@ function toPast(life: Life, line: string): PastLife {
     at: Date.now(),
     name: life.name,
     root: life.root,
-    rootName: ROOTS[life.root].name,
+    rootName: life.mortal ? "無靈根" : ROOTS[life.root].name,
     realm: life.realm,
     realmName: realmById(life.realm).name,
     age: life.age,

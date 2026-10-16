@@ -29,6 +29,7 @@ import {
   type RealmId,
   type WorldId,
 } from "@/lib/world";
+import { KarmaSpend } from "@/components/karma-spend";
 import { Mark, WithMark, type MarkName } from "@/components/marks";
 import { cn } from "@/lib/utils";
 
@@ -149,11 +150,12 @@ export function IntroView({
           }))}
           onChange={onPace}
         />
+        <KarmaSpend />
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <Button className="h-12 px-6 text-base" onClick={onBegin}>
             入道
           </Button>
-          <p className="text-sm text-muted-foreground">不改這些，也可以直接入道。</p>
+          <p className="text-sm text-muted-foreground">出身和靈根一起落下。不改這些，也可以直接入道。</p>
         </div>
         <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
           會出現壽元耗盡、突破失敗、走火。只寫結果，不寫過程。選擇會改路，不會改掉已經落下的靈根。
@@ -164,7 +166,7 @@ export function IntroView({
         <Note
           mark="companion"
           title="同一息的人"
-          body="開局會有三個人與你同時入道。他們用同一套規則走完，結果放在你旁邊。"
+          body="開局會有四位同歲的人與你同時入道。你推進時，他們也在突破、受傷或死去。點開仍是短的一生。"
         />
         <Note
           title="會停下來的地方"

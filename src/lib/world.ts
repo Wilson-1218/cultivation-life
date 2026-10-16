@@ -18,11 +18,23 @@ export type RealmId =
   | "spirit";
 export type GateId = "foundation" | "core" | "nascent" | "spirit";
 
+export type OriginId = "village" | "orphan" | "clan" | "cauldron" | "remnant";
+export type KarmaBoost = "root" | "origin";
+
+export type BuriedRelic = {
+  region: string;
+  item: string;
+  by: string;
+};
+
 export type Setup = {
   world: WorldId;
   cohort: CohortId;
   pace: PaceId;
   seed: number;
+  /** 只影響這一世的開局。人口推演不讀這兩項。 */
+  boost?: KarmaBoost | null;
+  buried?: BuriedRelic | null;
 };
 
 export const WORLDS: Record<
@@ -213,6 +225,42 @@ export const ROOTS: Record<
     gates: { foundation: 0.09, core: 0.036, nascent: 0.14, spirit: 0.16 },
     exam: 0.4,
     flavor: "坊市通用的功法多半對不上。快不快，要看路認不認你。",
+  },
+};
+
+export const ORIGINS: Record<
+  OriginId,
+  { id: OriginId; name: string; share: number; flavor: string }
+> = {
+  village: {
+    id: "village",
+    name: "鄉野人家",
+    share: 0.46,
+    flavor: "沒有功法，也沒有人專門來找你。日子靠自己一年一年過。",
+  },
+  orphan: {
+    id: "orphan",
+    name: "散修遺孤",
+    share: 0.28,
+    flavor: "留下的東西不多，記仇的人倒還在。爭的時候更容易見血。",
+  },
+  clan: {
+    id: "clan",
+    name: "修仙家族旁系",
+    share: 0.16,
+    flavor: "族裡有一點靈石和殘頁。出事時叫得動長輩，族裡也會來收。",
+  },
+  cauldron: {
+    id: "cauldron",
+    name: "藥人殘身",
+    share: 0.07,
+    flavor: "身體是別人養的。不跑出去，壽元只記到二十二歲。",
+  },
+  remnant: {
+    id: "remnant",
+    name: "轉世殘憶",
+    share: 0.03,
+    flavor: "有一段不屬於這一生的路。走得快，也容易把經脈走裂。",
   },
 };
 

@@ -37,7 +37,7 @@ export function CompanionLife({
               </DialogTitle>
               <DialogDescription>
                 <span className="block">
-                  <WithMark name="root">{ROOTS[companion.root].name}</WithMark>
+                  <WithMark name="root">{companion.mortal ? "無靈根" : ROOTS[companion.root].name}</WithMark>
                   <span>
                     {" "}
                     · {companion.region} · {ending}

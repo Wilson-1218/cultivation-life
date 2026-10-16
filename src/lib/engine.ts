@@ -2,8 +2,11 @@ import {
   FOCUSES,
   MANUALS,
   NAMES,
+  ORIGINS,
   PACES,
+  POPULATION,
   QI_REALMS,
+  REALMS,
   REGIONS,
   ROOTS,
   SECTS,
@@ -19,6 +22,7 @@ import {
   rootPopulation,
   type FocusId,
   type GateId,
+  type OriginId,
   type RealmId,
   type RootId,
   type Setup,
@@ -74,6 +78,8 @@ export type Companion = {
   cause: string;
   finalRealm: RealmId;
   finalAge: number;
+  mortal: boolean;
+  woundAge: number | null;
 };
 
 export type Reflection = {
@@ -124,6 +130,12 @@ export type Life = {
   dead: boolean;
   ending: "ongoing" | "dead" | "edge";
   cause: string;
+  story: boolean;
+  originId: OriginId;
+  mortal: boolean;
+  flash: string[];
+  buried: { region: string; item: string; by: string } | null;
+  escaped: boolean;
 };
 
 type Rng = {
@@ -187,11 +199,17 @@ export function isFinished(life: Life): boolean {
 
 export function createLife(
   setup: Setup,
-  options?: { companions?: boolean; forceRoot?: RootId },
+  options?: { companions?: boolean; forceRoot?: RootId; story?: boolean },
 ): Life {
   const withCompanions = options?.companions !== false;
+  const story = options?.story === true;
   const rng = makeRng(setup.seed || 1);
-  const root = options?.forceRoot ?? rollRoot(rng);
+  let root = options?.forceRoot ?? rollRoot(rng);
+  let originId = rollOriginId(setup.seed || 1);
+  const boosted = story && !options?.forceRoot ? setup.boost ?? null : null;
+  if (boosted === "origin") originId = "clan";
+  if (boosted === "root") root = bumpRoot(root);
+  const mortal = story && !options?.forceRoot && !boosted && mixSeed(setup.seed || 1, 0x4d) / 4294967296 < 0.07;
   const name = pick(rng, NAMES);
   const region = pick(rng, REGIONS);
   const living = setup.cohort === "living";
@@ -240,8 +258,33 @@ export function createLife(
     dead: false,
     ending: "ongoing",
     cause: "",
+    story,
+    originId,
+    mortal,
+    flash: [],
+    buried: story ? (setup.buried ?? null) : null,
+    escaped: false,
   };
   life.rngState = rng.state();
+  if (story && !mortal && originId === "cauldron") {
+    life.lifespan = Math.min(life.lifespan, 22);
+  }
+  if (story && !mortal && originId === "clan") {
+    life.stones += 36;
+    life.manual = "族裡抄來的殘頁";
+  }
+  if (story && !mortal && originId === "remnant") {
+    life.insight = clamp(life.insight + 8);
+  }
+  if (mortal) {
+    const born = ORIGINS[originId].name;
+    life.flash = [
+      `${life.name}，${life.region}，${born}。`,
+      "測靈的人把牌扣上。沒有靈根。",
+      "往後幾十年沒有吐納，也沒有坊市。",
+      "壽元照凡人走完。修途那八層，這一生沒有進去。",
+    ];
+  }
   life.origin = writeOrigin(life);
   life.log.push({
     id: `${life.id}-origin`,
@@ -253,10 +296,13 @@ export function createLife(
 
   if (withCompanions) {
     const used = new Set([life.name]);
-    life.companions = [1, 2, 3].map((salt) => {
+    life.companions = [1, 2, 3, 4].map((salt) => {
       const companionSeed = mixSeed(setup.seed || 1, salt);
       const companion = runToEnd(
-        createLife({ ...setup, seed: companionSeed }, { companions: false }),
+        createLife(
+          { ...setup, seed: companionSeed, boost: null, buried: null },
+          { companions: false, story },
+        ),
       );
       if (used.has(companion.name)) {
         companion.name = NAMES.find((item) => !used.has(item)) ?? companion.name;
@@ -387,6 +433,7 @@ export function steadyChoiceId(life: Life): string {
 }
 
 export function runToEnd(life: Life, policy: "auto" | "steady" = "auto"): Life {
+  if (life.mortal && !isFinished(life)) return finishMortal(life);
   let current = life;
   let guard = 0;
   while (!isFinished(current) && guard < 20000) {
@@ -418,6 +465,7 @@ export function runToEnd(life: Life, policy: "auto" | "steady" = "auto"): Life {
 export function companionNow(companion: Companion, age: number): {
   realm: RealmId;
   alive: boolean;
+  hurt: boolean;
   text: string;
 } {
   let realm = companion.spans[0]?.realm ?? "qi-early";
@@ -425,25 +473,29 @@ export function companionNow(companion: Companion, age: number): {
     if (span.fromAge <= age) realm = span.realm;
   }
   const alive = companion.deathAge === null || age < companion.deathAge;
-  const root = ROOTS[companion.root].name;
+  const root = companion.mortal ? "無靈根" : ROOTS[companion.root].name;
+  const hurt = companion.woundAge !== null && age >= companion.woundAge;
   if (!alive) {
     return {
       realm,
       alive: false,
-      text: `${companion.name} · ${root} · ${companion.deathAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`,
+      hurt: false,
+      text: `${companion.name} · ${root} · ${companion.deathAge}歲${companion.cause}，停在${companion.mortal ? "凡人" : realmById(companion.finalRealm).name}`,
     };
   }
   if (companion.ending === "edge" && age >= companion.finalAge) {
     return {
       realm,
       alive: true,
+      hurt,
       text: `${companion.name} · ${root} · 還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`,
     };
   }
   return {
     realm,
     alive: true,
-    text: `${companion.name} · ${root} · ${age}歲時在${realmById(realm).name}`,
+    hurt,
+    text: `${companion.name} · ${root} · ${age}歲時在${companion.mortal ? "凡人日子裡" : realmById(realm).name}${hurt ? "，受過傷" : ""}`,
   };
 }
 
@@ -488,6 +540,7 @@ function stepYear(life: Life, rng: Rng, notes: string[]): StepResult {
   }
   if (openGate(life)) return "pending";
   if (openReflect(life)) return "pending";
+  if (openStoryBeat(life)) return "pending";
   if (life.years >= 3 && rng.next() < TUNING.eventChance && openEvent(life, rng)) {
     return "pending";
   }
@@ -553,6 +606,7 @@ function applyYear(life: Life, rng: Rng, notes: string[]): void {
     hunger *
     drag *
     (life.spiritSettled ? 0.12 : 1) *
+    (life.story && life.originId === "remnant" ? 1.18 : 1) *
     (0.86 + rng.next() * 0.26);
   life.progress = clamp(life.progress + gain, 0, TUNING.progressCap);
   if (broke && !notes.includes("靈石見底，吐納發虛。")) {
@@ -632,13 +686,39 @@ function openReflect(life: Life): boolean {
 
 function openEvent(life: Life, rng: Rng): boolean {
   const available = EVENTS.filter(
-    (event) => !life.seenEvents.includes(event.id) && event.when(life),
+    (event) => !event.story && !life.seenEvents.includes(event.id) && event.when(life),
   );
   if (available.length === 0) return false;
   const event = pick(rng, available);
   life.seenEvents.push(event.id);
   life.pending = event.make(life);
   return true;
+}
+
+function openStoryBeat(life: Life): boolean {
+  if (!life.story || life.mortal) return false;
+  const id = nextStoryId(life);
+  if (!id || life.seenEvents.includes(id)) return false;
+  const event = EVENTS.find((item) => item.id === id);
+  if (!event) return false;
+  life.seenEvents.push(id);
+  life.pending = event.make(life);
+  return true;
+}
+
+function nextStoryId(life: Life): string | null {
+  const candidates: string[] = [];
+  if (life.originId === "cauldron" && !life.escaped && life.years >= 2 && life.years <= 8) {
+    candidates.push("cauldron-fire");
+  }
+  if (life.years >= 11 && life.years <= 20) candidates.push("snatch");
+  if (life.buried && life.years >= 12 && life.years <= 40) candidates.push("dig-past");
+  if (life.originId === "clan" && life.years >= 18 && life.years <= 32) candidates.push("clan-tithe");
+  if (life.originId === "remnant" && life.years >= 22 && life.years <= 44) candidates.push("remnant-surge");
+  if (life.years > 12 && life.age >= Math.max(28, Math.floor(life.lifespan * 0.86))) {
+    candidates.push("lifespan-mark");
+  }
+  return candidates.find((id) => !life.seenEvents.includes(id)) ?? null;
 }
 
 function resolveChoice(life: Life, rng: Rng, pendingId: string, choiceId: string): void {
@@ -859,6 +939,7 @@ const FOCUS_LINES: Record<FocusId, readonly string[]> = {
 
 type LifeEvent = {
   id: string;
+  story?: boolean;
   when: (life: Life) => boolean;
   make: (life: Life) => Pending;
   resolve: (life: Life, rng: Rng, choiceId: string) => void;
@@ -1384,6 +1465,237 @@ const EVENTS: LifeEvent[] = [
       );
     },
   },
+  {
+    id: "cauldron-fire",
+    story: true,
+    when: () => false,
+    make: () => ({
+      type: "choice",
+      id: "cauldron-fire",
+      title: "爐火要收口",
+      body: "養你的人要按時收爐。壽元只記到二十二歲。跑出去，才改得回來。",
+      choices: [
+        { id: "cauldron-fire:fight", label: "上前爭奪", hint: "撞開守爐的人。多半出不去。" },
+        { id: "cauldron-fire:run", label: "立刻跑路", hint: "東西不要。人出去了，壽元才算數。" },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      const fight = choiceId.endsWith(":fight");
+      const dieAt = fight ? 0.55 : 0.22;
+      if (rng.next() < dieAt) {
+        markDeath(life, fight ? "爐火收口，你撞上去沒有出來" : "爐火收口，你沒有跑出去");
+        pushLog(life, "choice", fight ? "你撞上去。爐火先收了你。" : "你跑了。爐火還是先收了口。");
+        return;
+      }
+      life.escaped = true;
+      life.lifespan = Math.max(life.lifespan, realmById(life.realm).lifespan);
+      if (fight) {
+        life.ling = clamp(life.ling - 12);
+        life.heart = clamp(life.heart - 6);
+        pushLog(life, "choice", "你撞開一條縫，人也傷了。壽元改記回這一境。");
+        return;
+      }
+      pushLog(life, "choice", "你跑出了那座爐。壽元改記回這一境。");
+    },
+  },
+  {
+    id: "snatch",
+    story: true,
+    when: () => false,
+    make: (life) => {
+      const choices: ChoiceOption[] = [
+        { id: "snatch:fight", label: "上前爭奪", hint: "東西可能到手。人多半留不下。" },
+        { id: "snatch:run", label: "立刻跑路", hint: "東西不要了。人通常還在。" },
+      ];
+      if (life.originId === "clan") {
+        choices.push({ id: "snatch:elder", label: "叫家族長輩", hint: "旁系的名頭有時有用。人多半還在。" });
+      }
+      return {
+        type: "choice",
+        id: "snatch",
+        title: "路上有人搶東西",
+        body: "前面起了爭端，東西掉在中間。上前的人多半留不下來。",
+        choices,
+      };
+    },
+    resolve: (life, rng, choiceId) => {
+      if (choiceId.endsWith(":elder")) {
+        const roll = rng.next();
+        if (roll < 0.12) {
+          markDeath(life, "上前爭奪，長輩沒有趕上");
+          pushLog(life, "choice", "你叫了長輩。人沒有趕到，你留在那堆東西旁邊。");
+          return;
+        }
+        if (roll < 0.28) {
+          life.ling = clamp(life.ling - 8);
+          pushLog(life, "choice", "長輩的人到了。東西沒有全到手，你受了傷，人還在。");
+          return;
+        }
+        life.stones += 12;
+        pushLog(life, "choice", "長輩的人到了，這場沒有打完。你退開，人還在。");
+        return;
+      }
+      if (choiceId.endsWith(":run")) {
+        if (rng.next() < 0.08) {
+          markDeath(life, "跑的時候還是被波及");
+          pushLog(life, "choice", "你轉身就跑。還是有一下砸到背上。人沒有離開那條路。");
+          return;
+        }
+        life.stones = Math.max(0, life.stones - 2);
+        life.heart = clamp(life.heart + 2);
+        pushLog(life, "choice", "你跑了。東西沒有拿到，人還在。");
+        return;
+      }
+      const harsh = life.originId === "orphan" ? 0.55 : 0.42;
+      const roll = rng.next();
+      if (roll < harsh) {
+        markDeath(life, "上前爭奪，沒有回來");
+        pushLog(life, "choice", "你上前。東西還在路上，人沒有回來。");
+        return;
+      }
+      if (roll < harsh + 0.33) {
+        life.ling = clamp(life.ling - 10);
+        life.lifespan = Math.max(life.age + 2, life.lifespan - 3);
+        life.stones += 8;
+        pushLog(life, "choice", "你搶到一點，人也傷了。還站得住。");
+        return;
+      }
+      const found = 18 + Math.floor(rng.next() * 40);
+      life.stones += found;
+      pushLog(life, "choice", `你搶到 ${formatCount(found)} 塊，人還站著。這種事不能常做。`);
+    },
+  },
+  {
+    id: "dig-past",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "dig-past",
+      title: "土裡有前世的東西",
+      body: `${life.buried?.by ?? "上一世的人"}在${life.buried?.region ?? life.region}一帶埋過${life.buried?.item ?? BURIED_ITEM}。這塊地像，也不一定就是。`,
+      choices: [
+        { id: "dig-past:dig", label: "挖挖看", hint: "可能挖到，也可能只是土。" },
+        { id: "dig-past:run", label: "立刻跑路", hint: "不在舊地停留。" },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      if (!choiceId.endsWith(":dig")) {
+        pushLog(life, "choice", "你沒有挖。那塊地留在後面。");
+        return;
+      }
+      const relic = life.buried;
+      life.buried = null;
+      if (rng.next() < 0.55) {
+        life.stones += 30;
+        life.insight = clamp(life.insight + 4);
+        pushLog(
+          life,
+          "choice",
+          `你挖到${relic?.item ?? BURIED_ITEM}。是${relic?.by ?? "上一世"}留下的。`,
+        );
+        return;
+      }
+      pushLog(life, "choice", "你挖開了。土裡沒有前世的東西。");
+    },
+  },
+  {
+    id: "clan-tithe",
+    story: true,
+    when: () => false,
+    make: () => ({
+      type: "choice",
+      id: "clan-tithe",
+      title: "家族來收帳",
+      body: "旁系每年要上繳靈石。繳不出的，族裡會把壽元也算進去。跑，就別再算這門親戚。",
+      choices: [
+        { id: "clan-tithe:fight", label: "上前爭奪", hint: "把帳本搶過來。族裡的人不會讓。" },
+        { id: "clan-tithe:pay", label: "上繳靈石", hint: "口袋薄一截。人通常還在族裡。" },
+        { id: "clan-tithe:run", label: "立刻跑路", hint: "名分不要了。人多半還在。" },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      if (choiceId.endsWith(":run")) {
+        if (rng.next() < 0.06) {
+          markDeath(life, "上前爭奪，追出來的人沒有留手");
+          pushLog(life, "choice", "你跑出院子。追出來的人沒有留手。");
+          return;
+        }
+        life.bond = clamp(life.bond - 10);
+        pushLog(life, "choice", "你離開家族的院子。人還在，名分沒有了。");
+        return;
+      }
+      if (choiceId.endsWith(":fight")) {
+        if (rng.next() < 0.48) {
+          markDeath(life, "上前爭奪，家族沒有讓你走");
+          pushLog(life, "choice", "你去搶帳本。族裡的人先下手。你沒有走出那道門。");
+          return;
+        }
+        life.ling = clamp(life.ling - 8);
+        life.stones += 10;
+        pushLog(life, "choice", "你搶下幾塊靈石，人也傷了。這門親戚算完了。");
+        return;
+      }
+      if (life.stones < 15) {
+        life.lifespan = Math.max(life.age + 1, life.lifespan - 8);
+        if (life.lifespan - life.age <= 2) {
+          markDeath(life, "家族把壽元也收走了");
+          pushLog(life, "choice", "你繳不出靈石。族裡把壽元算進去，這一世停在這裡。");
+          return;
+        }
+        pushLog(life, "choice", "你繳不出足數。族裡扣了八年壽元，人還在。");
+        return;
+      }
+      life.stones -= 15;
+      pushLog(life, "choice", "你上繳了十五塊。人還在族裡。");
+    },
+  },
+  {
+    id: "remnant-surge",
+    story: true,
+    when: () => false,
+    make: () => ({
+      type: "choice",
+      id: "remnant-surge",
+      title: "殘憶翻上來",
+      body: "不屬於這一生的路突然撞進來。硬走會快，也會把經脈走裂。",
+      choices: [
+        { id: "remnant-surge:fight", label: "上前爭奪", hint: "把那段記憶壓成修為。可能走火。" },
+        { id: "remnant-surge:run", label: "立刻跑路", hint: "不跟著走。人還是這一生的人。" },
+      ],
+    }),
+    resolve: (life, rng, choiceId) => {
+      if (!choiceId.endsWith(":fight")) {
+        life.insight = clamp(life.insight + 2);
+        life.heart = clamp(life.heart + 3);
+        pushLog(life, "choice", "你沒有跟著那股記憶走。人還在。");
+        return;
+      }
+      if (rng.next() < 0.4) {
+        markDeath(life, "走火，殘憶把經脈走裂");
+        pushLog(life, "choice", "你硬走。經脈裂開，這一生停在殘憶裡。");
+        return;
+      }
+      life.progress += 40;
+      life.ling = clamp(life.ling - 8);
+      pushLog(life, "choice", "你把殘憶壓下去，修為猛地動了一截，人也傷了。");
+    },
+  },
+  {
+    id: "lifespan-mark",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "lifespan-mark",
+      title: "壽元關口",
+      body: milestoneBody(life),
+      choices: [{ id: "lifespan-mark:steady", label: "知道了", hint: "這只是把同一套人數再看一眼。" }],
+    }),
+    resolve: (life) => {
+      pushLog(life, "choice", "你把這筆人數看過了。壽元還在走。");
+    },
+  },
 ];
 
 function writeOrigin(life: Life): string {
@@ -1399,12 +1711,94 @@ function writeOrigin(life: Life): string {
     `你是${life.name}，人在${life.region}。入道這年十六歲。`,
     cohort,
     `${world.name}。${world.note}`,
-    `靈根是${root.name}。八十億人裡，這一檔大約有${count}人。${root.flavor}`,
+    life.mortal
+      ? "沒有測出靈根。這一世不進修途。"
+      : `靈根是${root.name}。八十億人裡，這一檔大約有${count}人。${root.flavor}`,
+    life.story ? `出身是${ORIGINS[life.originId].name}。${ORIGINS[life.originId].flavor}` : "",
     relative,
     `起步時有 ${formatCount(life.stones)} 塊下品靈石。`,
   ]
     .filter(Boolean)
     .join("");
+}
+
+export const BURIED_ITEM = "一只缺了口的小瓶";
+
+export function finishMortal(life: Life): Life {
+  if (!life.mortal || isFinished(life)) return life;
+  const draft = clone(life);
+  draft.age = 66 + (mixSeed(draft.setup.seed || 1, 0x3) % 21);
+  draft.years = draft.age - 16;
+  markDeath(draft, "沒有靈根，壽元照凡人走完");
+  draft.log.push({
+    id: nextLogId(draft),
+    age: draft.age,
+    kind: "chapter",
+    text: draft.flash.join(""),
+    starred: false,
+  });
+  return draft;
+}
+
+export function heavenPoints(life: Life): number {
+  if (life.mortal) return 1;
+  const index = Math.max(0, REALMS.findIndex((item) => item.id === life.realm));
+  let points = 1 + index;
+  if (life.age >= 80) points += 1;
+  if (index >= 4) points += 2;
+  if (/爭奪|秘境|走火|爐|反噬/.test(life.cause)) points += 1;
+  return Math.min(12, points);
+}
+
+export function epitaph(life: Life): string {
+  if (life.mortal) return "沒有靈根的人，也把日子過完了";
+  if (life.ending === "edge") return "這一層走到頭了，人還在";
+  if (/爭奪/.test(life.cause)) return "東西還在路上，人沒有回來";
+  if (/跑的時候/.test(life.cause)) return "跑了，還是沒有跑出那一擊";
+  if (/爐/.test(life.cause)) return "爐火按時收口";
+  if (/走火/.test(life.cause)) return "心境裂開的那一下，人就不在了";
+  if (/秘境/.test(life.cause)) return "縫口合上的時候，外面沒有你";
+  if (/壽元/.test(life.cause)) return "壽元先到，路沒有再長";
+  return "這一世停在這裡";
+}
+
+export function karmaSentence(life: Life): string {
+  if (life.mortal || /壽元耗盡|壽元將盡/.test(life.cause)) {
+    return `下一世若走到${life.region}一帶，土裡可能還有你埋下的${BURIED_ITEM}。`;
+  }
+  return "這一世走得不平靜，沒有東西埋下去。";
+}
+
+export function burialOf(life: Life): { region: string; item: string; by: string } | null {
+  if (!(life.mortal || /壽元耗盡|壽元將盡/.test(life.cause))) return null;
+  return { region: life.region, item: BURIED_ITEM, by: life.name };
+}
+
+function rollOriginId(seed: number): OriginId {
+  const roll = mixSeed(seed, 0x51) / 4294967296;
+  let cursor = 0;
+  for (const id of ["village", "orphan", "clan", "cauldron", "remnant"] as const) {
+    cursor += ORIGINS[id].share;
+    if (roll < cursor) return id;
+  }
+  return "village";
+}
+
+function bumpRoot(root: RootId): RootId {
+  if (root === "wei") return "zhen";
+  if (root === "zhen") return "tian";
+  return root;
+}
+
+function milestoneBody(life: Life): string {
+  const realm = realmById(life.realm);
+  const index = REALMS.findIndex((item) => item.id === life.realm);
+  const next = index >= 0 && index < REALMS.length - 1 ? REALMS[index + 1] : null;
+  const here = `八十億人裡，把一生停在${realm.name}的約有${formatPeople(realm.stock)}。`;
+  const up = next
+    ? `再往上一層是${next.name}，約有${formatPeople(next.stock)}，大約${Math.max(1, Math.round(POPULATION / Math.max(1, next.stock)))}人裡一個。`
+    : "再往上，這一輪不寫。";
+  return `壽元記到 ${life.lifespan} 歲，你還在${realm.name}。${here}${up}這是同一套推演的人數，不是另一筆帳。`;
 }
 
 function rollRoot(rng: Rng): RootId {
@@ -1454,6 +1848,8 @@ function summarizeCompanion(life: Life): Companion {
     cause: life.cause,
     finalRealm: life.realm,
     finalAge: life.age,
+    mortal: life.mortal,
+    woundAge: life.log.find((entry) => /人也傷了|受了傷|經脈/.test(entry.text))?.age ?? null,
   };
 }
 

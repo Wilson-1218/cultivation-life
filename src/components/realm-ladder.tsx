@@ -2,7 +2,7 @@ import { Mark } from "@/components/marks";
 import { REALMS, formatPeople, type RealmId } from "@/lib/world";
 import { cn } from "@/lib/utils";
 
-export function RealmLadder({ current }: { current: RealmId }) {
+export function RealmLadder({ current }: { current?: RealmId | null }) {
   return (
     <ol className="flex flex-col gap-1.5">
       {REALMS.map((realm) => {
