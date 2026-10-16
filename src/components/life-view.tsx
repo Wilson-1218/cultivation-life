@@ -1,0 +1,401 @@
+"use client";
+
+import { useState } from "react";
+import { RealmLadder } from "@/components/realm-ladder";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { companionNow, type Life } from "@/lib/engine";
+import {
+  FOCUS_ORDER,
+  FOCUSES,
+  PACES,
+  ROOTS,
+  formatCount,
+  formatPeople,
+  realmById,
+  type FocusId,
+  type PaceId,
+} from "@/lib/world";
+import { cn } from "@/lib/utils";
+
+export function LifeView({
+  life,
+  paused,
+  auto,
+  onPause,
+  onAuto,
+  onPace,
+  onFocus,
+  onAdvance,
+  onChoice,
+  onReflect,
+  onStar,
+  onAbandon,
+}: {
+  life: Life;
+  paused: boolean;
+  auto: boolean;
+  onPause: () => void;
+  onAuto: () => void;
+  onPace: (pace: PaceId) => void;
+  onFocus: (focus: FocusId) => void;
+  onAdvance: () => void;
+  onChoice: (id: string) => void;
+  onReflect: (text: string) => void;
+  onStar: (id: string) => void;
+  onAbandon: () => void;
+}) {
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const reflectId = life.pending?.type === "reflect" ? life.pending.id : "";
+  const [draftState, setDraftState] = useState({ id: "", text: "" });
+  const draft = draftState.id === reflectId ? draftState.text : "";
+
+  const latest = life.log[life.log.length - 1];
+  const older = life.log.slice(0, -1).slice(-6).reverse();
+  const finished = life.dead || life.ending === "edge";
+  const waiting = Boolean(life.pending) || finished;
+  const realm = realmById(life.realm);
+
+  return (
+    <div className="min-h-dvh pb-28 md:pb-10">
+      <header className="sticky top-0 z-20 border-b border-border bg-background">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <p className="text-sm tracking-[0.16em] text-[#9c2f2a]">80億人修仙</p>
+          <div className="hidden items-center gap-2 md:flex">
+            <Tools
+              life={life}
+              paused={paused}
+              auto={auto}
+              onPause={onPause}
+              onAuto={onAuto}
+              onPace={onPace}
+              onAbandon={() => setLeaveOpen(true)}
+            />
+          </div>
+          <Sheet>
+            <SheetTrigger
+              className="md:hidden"
+              render={<Button variant="outline" className="h-10 px-3 md:hidden" />}
+            >
+              更多
+            </SheetTrigger>
+            <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>這一世</SheetTitle>
+                <SheetDescription>暫停、自動抉擇，或把步幅換短、換長。</SheetDescription>
+              </SheetHeader>
+              <div className="flex flex-col gap-4 px-4 pb-6">
+                <Tools
+                  life={life}
+                  paused={paused}
+                  auto={auto}
+                  onPause={onPause}
+                  onAuto={onAuto}
+                  onPace={onPace}
+                  onAbandon={() => setLeaveOpen(true)}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </header>
+
+      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="order-1 min-w-0">
+          <p className="text-sm text-muted-foreground">
+            {life.name} · {life.region} · {life.age}歲 · {ROOTS[life.root].name}
+            {life.sect ? ` · ${life.sect}` : " · 散修"}
+          </p>
+          <h1 className="mt-2 text-4xl font-semibold sm:text-5xl">{realm.name}</h1>
+          <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+            八十億人裡，約有 {formatPeople(realm.stock)} 人把一生停在{realm.name}。你現在在這一層。
+          </p>
+
+          {latest ? (
+            <article className="mt-8 border-t border-border pt-6" aria-live="polite">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-lg leading-8">{latest.text}</p>
+                <Button
+                  variant="ghost"
+                  className="h-9 shrink-0 px-2 text-sm"
+                  aria-pressed={latest.starred}
+                  onClick={() => onStar(latest.id)}
+                >
+                  {latest.starred ? "已記住" : "記住"}
+                </Button>
+              </div>
+            </article>
+          ) : null}
+
+          {life.pending?.type === "choice" ? (
+            <section className="mt-6 border border-border bg-card p-4 sm:p-5">
+              <h2 className="text-xl font-semibold">{life.pending.title}</h2>
+              <p className="mt-3 text-base leading-8">{life.pending.body}</p>
+              <div className="mt-4 flex flex-col gap-2">
+                {life.pending.choices.map((choice) => (
+                  <Button
+                    key={choice.id}
+                    variant="outline"
+                    className="h-auto min-h-12 w-full items-start justify-start px-4 py-3 text-left whitespace-normal"
+                    onClick={() => onChoice(choice.id)}
+                  >
+                    <span className="flex flex-col items-start gap-1">
+                      <span className="text-base">{choice.label}</span>
+                      <span className="text-sm font-normal text-muted-foreground">{choice.hint}</span>
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {life.pending?.type === "reflect" ? (
+            <section className="mt-6 border border-border bg-card p-4 sm:p-5">
+              <h2 className="text-xl font-semibold">停一下</h2>
+              <p className="mt-3 text-base leading-8">{life.pending.prompt}</p>
+              <label className="mt-4 block text-sm text-muted-foreground" htmlFor="reflect">
+                留一行，或什麼都不寫
+              </label>
+              <Input
+                id="reflect"
+                value={draft}
+                maxLength={80}
+                placeholder="可以空白"
+                className="mt-2 h-11"
+                onChange={(event) => setDraftState({ id: reflectId, text: event.target.value })}
+              />
+              <Button className="mt-3 h-11 px-4" onClick={() => onReflect(draft)}>
+                繼續
+              </Button>
+            </section>
+          ) : null}
+
+          <section className="mt-8">
+            <h2 className="text-sm text-muted-foreground">這一段的重心</h2>
+            <div className="mt-2 grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-5" role="group" aria-label="這一段的重心">
+              {FOCUS_ORDER.map((id) => {
+                const on = life.focus === id;
+                return (
+                  <Button
+                    key={id}
+                    variant="ghost"
+                    disabled={waiting}
+                    aria-pressed={on}
+                    className={cn(
+                      "h-11 rounded-none bg-card max-sm:last:col-span-2",
+                      on && "bg-foreground text-background hover:bg-foreground hover:text-background",
+                    )}
+                    onClick={() => onFocus(id)}
+                  >
+                    {FOCUSES[id].name}
+                  </Button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{FOCUSES[life.focus].hint}</p>
+            <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background p-3 md:static md:z-auto md:mt-4 md:border-0 md:bg-transparent md:p-0">
+              <Button
+                className="h-12 w-full px-6 text-base md:w-auto"
+                disabled={(!finished && Boolean(life.pending)) || (auto && !paused && !finished)}
+                onClick={onAdvance}
+              >
+                {finished ? "看你落在哪一層" : auto && !paused ? "自動走著" : "過這一段"}
+              </Button>
+            </div>
+          </section>
+
+          {older.length > 0 ? (
+            <section className="mt-8">
+              <h2 className="text-sm text-muted-foreground">先前</h2>
+              <ul className="mt-3 flex flex-col gap-4">
+                {older.map((entry) => (
+                  <li key={entry.id} className="border-l border-border pl-3 text-sm leading-7 text-[#3a332c]">
+                    <span className="num text-muted-foreground">{entry.age}歲 · </span>
+                    {entry.text}
+                    {entry.starred ? <span className="text-[#9c2f2a]"> · 記住了</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="order-2 min-w-0 lg:sticky lg:top-20 lg:self-start">
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-muted-foreground">靈石</dt>
+              <dd className="num text-xl">{formatCount(life.stones)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">壽元</dt>
+              <dd className="num text-xl">
+                {life.age}
+                <span className="text-base text-muted-foreground"> / {life.lifespan}</span>
+              </dd>
+            </div>
+          </dl>
+          <ul className="mt-4 flex flex-col gap-3">
+            {(
+              [
+                ["靈力", life.ling],
+                ["心境", life.heart],
+                ["見識", life.insight],
+                ["人脈", life.bond],
+              ] as const
+            ).map(([label, value]) => (
+              <li key={label}>
+                <div className="flex items-baseline justify-between text-sm">
+                  <span>{label}</span>
+                  <span className="num">{Math.round(value)}</span>
+                </div>
+                <div className="mt-1 h-1.5 bg-[#e4d8c4]">
+                  <div
+                    className={cn("h-full", value < 25 ? "bg-[#9c2f2a]" : "bg-foreground")}
+                    style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <StatsDialog />
+          <div className="mt-6">
+            <h2 className="text-sm text-muted-foreground">一生停在各層的人</h2>
+            <div className="mt-2">
+              <RealmLadder current={life.realm} />
+            </div>
+          </div>
+          <div className="mt-6">
+            <h2 className="text-sm text-muted-foreground">同一息入道</h2>
+            <ul className="mt-2 flex flex-col gap-2">
+              {life.companions.map((companion) => (
+                <li key={companion.name} className="text-sm leading-6">
+                  {companionNow(companion, life.age).text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+      </div>
+
+      <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>回到開場？</DialogTitle>
+            <DialogDescription>這一世還沒走完，回去就不會留下。</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="h-10" onClick={() => setLeaveOpen(false)}>
+              留下
+            </Button>
+            <Button
+              className="h-10"
+              onClick={() => {
+                setLeaveOpen(false);
+                onAbandon();
+              }}
+            >
+              回去
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function Tools({
+  life,
+  paused,
+  auto,
+  onPause,
+  onAuto,
+  onPace,
+  onAbandon,
+}: {
+  life: Life;
+  paused: boolean;
+  auto: boolean;
+  onPause: () => void;
+  onAuto: () => void;
+  onPace: (pace: PaceId) => void;
+  onAbandon: () => void;
+}) {
+  return (
+    <>
+      <Button variant="outline" className="h-10" aria-pressed={paused} onClick={onPause}>
+        {paused ? "繼續走" : "暫停"}
+      </Button>
+      <Button variant={auto ? "default" : "outline"} className="h-10" aria-pressed={auto} onClick={onAuto}>
+        自動抉擇
+      </Button>
+      <div className="flex border border-border" role="group" aria-label="步幅">
+        {(Object.keys(PACES) as PaceId[]).map((id) => {
+          const on = life.setup.pace === id;
+          return (
+            <Button
+              key={id}
+              variant="ghost"
+              aria-pressed={on}
+              className={cn(
+                "h-10 rounded-none px-3",
+                on && "bg-foreground text-background hover:bg-foreground hover:text-background",
+              )}
+              onClick={() => onPace(id)}
+            >
+              {PACES[id].name}
+            </Button>
+          );
+        })}
+      </div>
+      <Button variant="ghost" className="h-10" onClick={onAbandon}>
+        回到開場
+      </Button>
+    </>
+  );
+}
+
+function StatsDialog() {
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button variant="ghost" className="mt-2 h-8 px-0 text-sm text-muted-foreground" />}>
+        這四條是什麼
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>狀態，0 到 100</DialogTitle>
+          <DialogDescription>高只提高可能性，不決定這一年的結果。</DialogDescription>
+        </DialogHeader>
+        <ul className="flex flex-col gap-3 text-sm leading-7">
+          <li>
+            <strong>靈力</strong> 影響修為快慢。太低的時候，空手衝關更危險。
+          </li>
+          <li>
+            <strong>心境</strong> 影響走火，也影響衝關穩不穩。閉關與謀石會磨它。
+          </li>
+          <li>
+            <strong>見識</strong> 影響功法與衝關。到了七十上下，再高也差不了多少。
+          </li>
+          <li>
+            <strong>人脈</strong> 影響有沒有人肯告訴你名額、肯見你一面。
+          </li>
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
