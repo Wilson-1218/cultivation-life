@@ -13,46 +13,23 @@ import {
 import { clearPast, usePastLives } from "@/lib/storage";
 import { CENSUS_HITS, CENSUS_META } from "@/lib/census-data";
 import {
-  COHORTS,
-  PACES,
   POPULATION,
   REALMS,
   ROOT_ORDER,
   ROOTS,
-  WORLDS,
   censusTotal,
   formatCount,
   formatPeople,
   rootPopulation,
-  type CohortId,
-  type PaceId,
   type RealmId,
-  type WorldId,
 } from "@/lib/world";
 import { KarmaSpend } from "@/components/karma-spend";
 import { Mark, WithMark, type MarkName } from "@/components/marks";
-import { cn } from "@/lib/utils";
 
 const ENTRY_RATE = 2.6;
 const DEATH_RATE = 2.3;
 
-export function IntroView({
-  world,
-  cohort,
-  pace,
-  onWorld,
-  onCohort,
-  onPace,
-  onBegin,
-}: {
-  world: WorldId;
-  cohort: CohortId;
-  pace: PaceId;
-  onWorld: (id: WorldId) => void;
-  onCohort: (id: CohortId) => void;
-  onPace: (id: PaceId) => void;
-  onBegin: () => void;
-}) {
+export function IntroView({ onBegin }: { onBegin: () => void }) {
   const past = usePastLives();
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
@@ -120,42 +97,12 @@ export function IntroView({
       </section>
 
       <section className="mt-10 flex flex-col gap-6 border-t border-border pt-8">
-        <Option
-          label="哪一種世間"
-          hint={WORLDS[world].note}
-          value={world}
-          options={(Object.keys(WORLDS) as WorldId[]).map((id) => ({
-            id,
-            name: WORLDS[id].name,
-          }))}
-          onChange={onWorld}
-        />
-        <Option
-          label="你是哪一批"
-          hint={COHORTS[cohort].note}
-          value={cohort}
-          options={(Object.keys(COHORTS) as CohortId[]).map((id) => ({
-            id,
-            name: COHORTS[id].name,
-          }))}
-          onChange={onCohort}
-        />
-        <Option
-          label="這一步幅"
-          hint={PACES[pace].note}
-          value={pace}
-          options={(Object.keys(PACES) as PaceId[]).map((id) => ({
-            id,
-            name: PACES[id].name,
-          }))}
-          onChange={onPace}
-        />
         <KarmaSpend />
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <Button className="h-12 px-6 text-base" onClick={onBegin}>
             入道
           </Button>
-          <p className="text-sm text-muted-foreground">出身和靈根一起落下。不改這些，也可以直接入道。</p>
+          <p className="text-sm text-muted-foreground">出身和靈根一起落下。</p>
         </div>
         <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
           會出現壽元耗盡、突破失敗、走火。只寫結果，不寫過程。選擇會改路，不會改掉已經落下的靈根。
@@ -255,46 +202,6 @@ function Counters() {
           <span>同一段時間裡壽元耗盡的人</span>
         </span>
       </p>
-    </div>
-  );
-}
-
-function Option<T extends string>({
-  label,
-  hint,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: T;
-  options: { id: T; name: string }[];
-  onChange: (id: T) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex w-full flex-col border border-border sm:w-fit sm:flex-row" role="group" aria-label={label}>
-        {options.map((option) => {
-          const on = option.id === value;
-          return (
-            <Button
-              key={option.id}
-              variant="ghost"
-              aria-pressed={on}
-              className={cn(
-                "h-11 rounded-none px-4",
-                on && "bg-foreground text-background hover:bg-foreground hover:text-background",
-              )}
-              onClick={() => onChange(option.id)}
-            >
-              {option.name}
-            </Button>
-          );
-        })}
-      </div>
-      <p className="max-w-xl text-sm leading-6 text-muted-foreground">{hint}</p>
     </div>
   );
 }

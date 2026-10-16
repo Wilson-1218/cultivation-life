@@ -24,17 +24,7 @@ import {
   type Life,
 } from "@/lib/engine";
 import { clearBuried, clearFoe, clearHaunt, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
-import {
-  PACES,
-  ROOTS,
-  WORLDS,
-  realmById,
-  type CohortId,
-  type FocusId,
-  type PaceId,
-  type Setup,
-  type WorldId,
-} from "@/lib/world";
+import { ROOTS, WORLDS, realmById, type FocusId, type Setup } from "@/lib/world";
 
 type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
 
@@ -73,7 +63,7 @@ export function Experience() {
       }, 700);
       return () => window.clearTimeout(timer);
     }
-    const delay = life.pending ? 780 : PACES[life.setup.pace].delay;
+    const delay = life.pending ? 780 : 640;
     const timer = window.setTimeout(() => {
       setLife((current) => {
         if (!current || isFinished(current)) return current;
@@ -84,7 +74,7 @@ export function Experience() {
             return applyChoice(current, choiceId);
           }
           if (current.pending?.type === "reflect") return applyReflection(current, "");
-          return advance({ ...current, focus: autoFocus(current) });
+          return advance({ ...current, focus: autoFocus(current) }, 1);
         } catch {
           setFault("推演進行到一半斷了。");
           return current;
@@ -174,15 +164,7 @@ export function Experience() {
 
   if (phase === "intro") {
     return (
-      <IntroView
-        world={setup.world}
-        cohort={setup.cohort}
-        pace={setup.pace}
-        onWorld={(world: WorldId) => setSetup((current) => ({ ...current, world }))}
-        onCohort={(cohort: CohortId) => setSetup((current) => ({ ...current, cohort }))}
-        onPace={(pace: PaceId) => setSetup((current) => ({ ...current, pace }))}
-        onBegin={() => startNext(randomSeed())}
-      />
+      <IntroView onBegin={() => startNext(randomSeed())} />
     );
   }
 
@@ -225,10 +207,6 @@ export function Experience() {
       auto={auto}
       onPause={() => setPaused((value) => !value)}
       onAuto={() => setAuto((value) => !value)}
-      onPace={(pace) => {
-        setSetup((current) => ({ ...current, pace }));
-        setLife((current) => (current ? { ...current, setup: { ...current.setup, pace } } : current));
-      }}
       onFocus={(focus: FocusId) => setLife((current) => (current ? { ...current, focus } : current))}
       onAdvance={() => {
         if (isFinished(life)) {
@@ -236,7 +214,7 @@ export function Experience() {
           setPhase("end");
           return;
         }
-        run((current) => advance(current));
+        run((current) => advance(current, 1));
       }}
       onChoice={(id) => {
         settleCarry(id);

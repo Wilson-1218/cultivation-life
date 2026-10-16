@@ -26,14 +26,12 @@ import { companionNow, type Companion, type Life } from "@/lib/engine";
 import {
   FOCUS_ORDER,
   FOCUSES,
-  PACES,
   ORIGINS,
   ROOTS,
   formatCount,
   formatPeople,
   realmById,
   type FocusId,
-  type PaceId,
 } from "@/lib/world";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +41,6 @@ export function LifeView({
   auto,
   onPause,
   onAuto,
-  onPace,
   onFocus,
   onAdvance,
   onChoice,
@@ -56,7 +53,6 @@ export function LifeView({
   auto: boolean;
   onPause: () => void;
   onAuto: () => void;
-  onPace: (pace: PaceId) => void;
   onFocus: (focus: FocusId) => void;
   onAdvance: () => void;
   onChoice: (id: string) => void;
@@ -84,12 +80,10 @@ export function LifeView({
           <p className="text-sm tracking-[0.16em] text-[#9c2f2a]">80億人修仙</p>
           <div className="hidden items-center gap-2 md:flex">
             <Tools
-              life={life}
               paused={paused}
               auto={auto}
               onPause={onPause}
               onAuto={onAuto}
-              onPace={onPace}
               onAbandon={() => setLeaveOpen(true)}
             />
           </div>
@@ -103,16 +97,14 @@ export function LifeView({
             <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
               <SheetHeader>
                 <SheetTitle>這一世</SheetTitle>
-                <SheetDescription>暫停、自動抉擇，或把步幅換短、換長。</SheetDescription>
+                <SheetDescription>暫停，或把抉擇交給自動。</SheetDescription>
               </SheetHeader>
               <div className="flex flex-col gap-4 px-4 pb-6">
                 <Tools
-                  life={life}
                   paused={paused}
                   auto={auto}
                   onPause={onPause}
                   onAuto={onAuto}
-                  onPace={onPace}
                   onAbandon={() => setLeaveOpen(true)}
                 />
               </div>
@@ -369,20 +361,16 @@ export function LifeView({
 }
 
 function Tools({
-  life,
   paused,
   auto,
   onPause,
   onAuto,
-  onPace,
   onAbandon,
 }: {
-  life: Life;
   paused: boolean;
   auto: boolean;
   onPause: () => void;
   onAuto: () => void;
-  onPace: (pace: PaceId) => void;
   onAbandon: () => void;
 }) {
   return (
@@ -393,25 +381,6 @@ function Tools({
       <Button variant={auto ? "default" : "outline"} className="h-10" aria-pressed={auto} onClick={onAuto}>
         自動抉擇
       </Button>
-      <div className="flex border border-border" role="group" aria-label="步幅">
-        {(Object.keys(PACES) as PaceId[]).map((id) => {
-          const on = life.setup.pace === id;
-          return (
-            <Button
-              key={id}
-              variant="ghost"
-              aria-pressed={on}
-              className={cn(
-                "h-10 rounded-none px-3",
-                on && "bg-foreground text-background hover:bg-foreground hover:text-background",
-              )}
-              onClick={() => onPace(id)}
-            >
-              {PACES[id].name}
-            </Button>
-          );
-        })}
-      </div>
       <Button variant="ghost" className="h-10" onClick={onAbandon}>
         回到開場
       </Button>
