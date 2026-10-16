@@ -21,9 +21,11 @@ export function CompanionLife({
 }) {
   const open = companion !== null;
   const ending = companion
-    ? companion.ending === "edge"
-      ? `還活著，${companion.finalAge}歲。化神走到這一輪的盡頭。`
-      : `${companion.finalAge}歲。${companion.cause}停在${realmById(companion.finalRealm).name}。`
+    ? companion.mortal
+      ? `${companion.finalAge}歲。${companion.cause}。`
+      : companion.ending === "edge"
+        ? `還活著，${companion.finalAge}歲。化神走到這一輪的盡頭。`
+        : `${companion.finalAge}歲。${companion.cause}停在${realmById(companion.finalRealm).name}。`
     : "";
 
   return (

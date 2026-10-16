@@ -100,10 +100,12 @@ export function EndView({
                 <span className="font-semibold">{companion.name}</span>
                 <span className="text-muted-foreground">
                   {" "}
-                  · {ROOTS[companion.root].name} · {companion.region} ·{" "}
-                  {companion.ending === "edge"
-                    ? `還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`
-                    : `${companion.finalAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`}
+                  · {companion.mortal ? "無靈根" : ROOTS[companion.root].name} · {companion.region} ·{" "}
+                  {companion.mortal
+                    ? `${companion.finalAge}歲${companion.cause}`
+                    : companion.ending === "edge"
+                      ? `還活著，${companion.finalAge}歲，化神走到這一輪的盡頭`
+                      : `${companion.finalAge}歲${companion.cause}，停在${realmById(companion.finalRealm).name}`}
                 </span>
                 <span className="mt-1 inline-flex items-center gap-1 text-[#9c2f2a]">
                   <Mark name="companion" />
