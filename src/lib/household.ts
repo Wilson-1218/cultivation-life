@@ -233,46 +233,67 @@ export function buildHousehold(input: {
   const childInLaw = outsiderName(seed, 0x49, surname, childCall === "兒子" ? "f" : "m", avoid);
   const mate = outsiderName(seed, 0x4b, surname, "m", avoid);
   const firstLoss: "father" | "mother" = mix(seed, 0x23) % 2 === 0 ? "father" : "mother";
-  const early = input.mortal ? 36 + (mix(seed, 0x21) % 10) : 40 + (mix(seed, 0x21) % 12);
-  const late = input.mortal ? 50 + (mix(seed, 0x22) % 10) : 56 + (mix(seed, 0x22) % 14);
-  const marryAt = 22 + (mix(seed, 0x11) % 6);
-  const birth = marryAt + 4 + (mix(seed, 0x12) % 3);
   const used = new Set<number>();
   const agenda: { id: string; age: number }[] = [];
-  const add = (id: string, want: number) => agenda.push({ id, age: place(used, want) });
+  const add = (id: string, want: number) => {
+    const age = place(used, want);
+    agenda.push({ id, age });
+    return age;
+  };
+  const saltOf = (id: string) => {
+    let hash = 2166136261;
+    for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return (hash >>> 0) || 1;
+  };
+  const at = (id: string, min: number, span: number) => min + (mix(seed, saltOf(id)) % span);
   add("born", 0);
-  add("father", 3);
-  add("sibling", 6);
-  add("broke", 8);
-  add("hand", 9);
-  add("chill", 10);
-  add("birthday", 12);
-  add("story", 13);
-  add("job", 14);
-  add("craft", 16);
-  add("festival", 18);
-  add("aging", 20);
-  add("marry", marryAt);
-  add("quarrel", marryAt + 1);
-  add("mend", marryAt + 2);
-  add("settle", marryAt + 3);
-  add("aid", marryAt + 4);
-  add("child", birth);
-  add("letters", birth + 6);
-  add("grow", birth + 8);
-  add("split", 32);
-  add("missing", 36);
-  add("childwork", birth + 16);
-  add("childmarry", birth + 18);
-  add(`${firstLoss}-ill`, early - 3);
-  add(`${firstLoss}-die`, early);
-  add("funeral", early + 2);
-  add("grave", early + 6);
+  add("sibling", at("sibling", 5, 4));
+  add("job", at("job", 14, 3));
+  const married = add("marry", at("marry", 21, 9));
+  const bornChild = add("child", married + 3 + (mix(seed, 0x12) % 6));
+  if (children[1] && mix(seed, 0x67) % 2 === 0) add("child2", bornChild + 2 + (mix(seed, 0x68) % 4));
+  const illAt = add(`${firstLoss}-ill`, at("ill", input.mortal ? 33 : 36, 14));
+  const dieAt = add(`${firstLoss}-die`, illAt + 2 + (mix(seed, 0x24) % 4));
   const second = firstLoss === "father" ? "mother" : "father";
-  add(`${second}-ill`, late - 3);
-  add(`${second}-die`, late);
-  add("remember", late + 4);
-  if (children[1]) add("child2", birth + 5);
+  const illLater = add(`${second}-ill`, dieAt + 6 + (mix(seed, 0x25) % 8));
+  add(`${second}-die`, illLater + 2 + (mix(seed, 0x26) % 3));
+  add("grave", dieAt + 2 + (mix(seed, 0x27) % 5));
+  add("remember", illLater + 5 + (mix(seed, 0x28) % 4));
+  const earlyPool = ["broke", "chill", "birthday", "story", "craft", "festival", "quarrel", "aid", "split"];
+  const latePool = ["letters", "missing", "funeral", "childmarry"];
+  const draw = (pool: string[], count: number, salt: number) =>
+    [...pool]
+      .sort((a, b) => mix(seed, saltOf(a) ^ salt) - mix(seed, saltOf(b) ^ salt))
+      .slice(0, count);
+  const picked = new Set([
+    ...draw(earlyPool, 4 + (mix(seed, 0x6a) % 3), 0x6b),
+    ...draw(latePool, 1 + (mix(seed, 0x6c) % 3), 0x6d),
+  ]);
+  const optional: { id: string; age: number }[] = [];
+  if (picked.has("broke")) optional.push({ id: "broke", age: at("broke", 6, 16) });
+  if (picked.has("chill")) optional.push({ id: "chill", age: at("chill", 7, 16) });
+  if (picked.has("birthday")) optional.push({ id: "birthday", age: at("birthday", 9, 18) });
+  if (picked.has("story")) optional.push({ id: "story", age: at("story", 8, 18) });
+  if (picked.has("craft")) optional.push({ id: "craft", age: at("craft", 12, 18) });
+  if (picked.has("festival")) optional.push({ id: "festival", age: at("festival", 10, 22) });
+  if (picked.has("aid")) optional.push({ id: "aid", age: at("aid", 16, 18) });
+  if (picked.has("split")) optional.push({ id: "split", age: at("split", 22, 16) });
+  if (picked.has("letters")) optional.push({ id: "letters", age: bornChild + 3 + (mix(seed, saltOf("letters")) % 8) });
+  if (picked.has("missing")) optional.push({ id: "missing", age: at("missing", 20, 18) });
+  if (picked.has("funeral")) optional.push({ id: "funeral", age: dieAt + 1 + (mix(seed, saltOf("funeral")) % 4) });
+  if (picked.has("childmarry")) optional.push({ id: "childmarry", age: bornChild + 14 + (mix(seed, saltOf("childmarry")) % 8) });
+  if (picked.has("quarrel")) {
+    const before = mix(seed, 0x71) % 2 === 0;
+    const want = before ? at("quarrel", 15, 6) : married + 1 + (mix(seed, saltOf("quarrel")) % 6);
+    optional.push({ id: "quarrel", age: want });
+  }
+  optional.sort((a, b) => mix(seed, saltOf(a.id) ^ 0x9e) - mix(seed, saltOf(b.id) ^ 0x9e));
+  let quarrelAge = married;
+  for (const item of optional) {
+    const placed = add(item.id, item.age);
+    if (item.id === "quarrel") quarrelAge = placed;
+  }
+  if (picked.has("quarrel") && mix(seed, 0x72) % 3 !== 0) add("mend", quarrelAge + 1 + (mix(seed, 0x73) % 3));
   for (const age of [15, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 77]) add(`work-${age}`, age);
   agenda.sort((a, b) => a.age - b.age);
   const house: Household = {
