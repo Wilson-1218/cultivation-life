@@ -74,7 +74,7 @@ export function LifeView({
   const realm = realmById(life.realm);
 
   return (
-    <div className="min-h-dvh pb-8 md:pb-10">
+    <div className="min-h-dvh overflow-x-hidden pb-8 md:pb-10">
       <header className="sticky top-0 z-20 border-b border-border bg-background">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <p className="text-sm tracking-[0.16em] text-[#9c2f2a]">80億人修仙</p>
@@ -128,10 +128,12 @@ export function LifeView({
           </p>
           <h1 className="mt-2 flex items-center gap-2 text-4xl font-semibold sm:gap-3 sm:text-5xl">
             <Mark name="realm" className="size-6 text-[#9c2f2a] sm:size-7" />
-            <span>{realm.name}</span>
+            <span>{life.mortal && life.revealed ? "凡人" : realm.name}</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
-            八十億人裡，約有 {formatPeople(realm.stock)} 人把一生停在{realm.name}。你現在在這一層。
+            {life.mortal && life.revealed
+              ? "沒有靈根。這一世的日子在家裡，也在要做的事上。"
+              : `八十億人裡，約有 ${formatPeople(realm.stock)} 人把一生停在${realm.name}。你現在在這一層。`}
           </p>
           <FriendStrip
             life={life}
@@ -149,7 +151,7 @@ export function LifeView({
               {life.yearLines.length > 0 ? (
                 <ul className="mt-3 flex flex-col gap-3">
                   {life.yearLines.map((line, index) => (
-                    <li key={`${life.yearAge}-${index}`} className="text-lg leading-8">
+                    <li key={`${life.yearAge}-${index}`} className="break-words text-lg leading-8">
                       {line}
                     </li>
                   ))}

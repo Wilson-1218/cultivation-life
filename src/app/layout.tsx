@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-Hant" className="h-full antialiased">
-      <body className="min-h-full">
+      <body className="min-h-full overflow-x-hidden">
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

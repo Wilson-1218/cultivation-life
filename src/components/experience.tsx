@@ -58,10 +58,6 @@ export function Experience() {
   useEffect(() => {
     if (phase !== "life" || paused || !life || fault) return;
     if (isFinished(life)) return;
-    if (life.revealed && life.mortal) {
-      const timer = window.setTimeout(() => setPhase("flash"), 1100);
-      return () => window.clearTimeout(timer);
-    }
     if (life.pending) {
       if (!auto) return;
       const timer = window.setTimeout(() => {

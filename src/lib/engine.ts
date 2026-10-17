@@ -1,4 +1,5 @@
 import { AFFAIRS, affairChoices, applyBeat, drawAffairs, resolveAffair } from "./affairs";
+import { bindHousehold, buildHousehold, commitHome, dueHome, type HomeContext, type Household } from "./household";
 import { humanName } from "./names";
 import {
   FOCUSES,
@@ -36,7 +37,7 @@ import {
 export type LogEntry = {
   id: string;
   age: number;
-  kind: "chapter" | "choice" | "pause" | "system";
+  kind: "chapter" | "choice" | "pause" | "system" | "home";
   text: string;
   starred: boolean;
 };
@@ -155,6 +156,8 @@ export type Life = {
   scarred: boolean;
   hadCave: boolean;
   thread: LifeThread | null;
+  household: Household | null;
+  yearKinds: LogEntry["kind"][];
 };
 
 type Rng = {
@@ -297,6 +300,8 @@ export function createLife(
     scarred: false,
     hadCave: false,
     thread: story ? (setup.thread ?? null) : null,
+    household: null,
+    yearKinds: [],
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -309,14 +314,18 @@ export function createLife(
   if (story && !mortal && originId === "remnant") {
     life.insight = clamp(life.insight + 8);
   }
+  if (story) {
+    life.household = buildHousehold({
+      seed: setup.seed || 1,
+      name: life.name,
+      region: life.region,
+      originId,
+      mortal,
+    });
+  }
   if (mortal) {
-    const born = ORIGINS[originId].name;
-    life.flash = [
-      `${life.name}，${life.region}，${born}。`,
-      "測靈的人把牌扣上。沒有靈根。",
-      "往後幾十年沒有吐納，也沒有坊市。",
-      "壽元照凡人走完。修途那八層，這一生沒有進去。",
-    ];
+    life.lifespan = 68 + (mixSeed(setup.seed || 1, 0x3c) % 16);
+    life.flash = [];
   }
   life.origin = writeOrigin(life);
   if (!story) {
@@ -395,7 +404,10 @@ export function applyChoice(life: Life, choiceId: string): Life {
   resolveChoice(draft, rng, pending.id, choiceId);
   if (draft.story) {
     const fresh = draft.log.splice(logAt);
-    for (const entry of fresh) draft.yearLines.push(entry.text);
+    for (const entry of fresh) {
+      draft.yearLines.push(entry.text);
+      draft.yearKinds.push(entry.kind);
+    }
     draft.yearOpen = false;
     if (!draft.dead && draft.ending !== "edge") {
       draft.age += 1;
@@ -514,7 +526,6 @@ function runStory(life: Life, policy: "auto" | "steady"): Life {
   let current = life;
   let guard = 0;
   while (!isFinished(current) && guard < 8000) {
-    if (current.revealed && current.mortal) return finishMortal(current);
     if (current.pending?.type === "choice") {
       const choiceId = policy === "steady" ? steadyChoiceId(current) : autoChoiceId(current);
       current = applyChoice(current, choiceId);
@@ -581,12 +592,40 @@ function dueLegacy(life: Life, age: number): string | null {
   return null;
 }
 
+function pushYear(life: Life, text: string, kind: LogEntry["kind"] = "chapter"): void {
+  life.yearLines.push(text);
+  life.yearKinds.push(kind);
+}
+
+function homeCtx(life: Life, age: number): HomeContext {
+  return { age, realm: life.realm, sect: life.sect, mortal: life.mortal, escaped: life.escaped };
+}
+
+function pullHome(life: Life, age: number): string | null {
+  if (!life.household) return null;
+  const id = dueHome(life.household, age);
+  if (!id) return null;
+  return commitHome(life.household, id, homeCtx(life, age));
+}
+
 function pushBeat(life: Life, rng: Rng, age: number): void {
   const drawn = drawAffairs(life, rng, age, 1, false);
   const beat = drawn.beats[0];
   if (!beat) return;
   life.seenEvents.push(beat.id);
-  life.yearLines.push(applyBeat(life, rng, beat));
+  pushYear(life, applyBeat(life, rng, beat));
+}
+
+function bindPending(life: Life): void {
+  const pending = life.pending;
+  if (!life.household || !pending || pending.type !== "choice") return;
+  pending.title = bindHousehold(pending.title, life.household);
+  pending.body = bindHousehold(pending.body, life.household);
+  pending.choices = pending.choices.map((choice) => ({
+    ...choice,
+    label: bindHousehold(choice.label, life.household),
+    hint: bindHousehold(choice.hint, life.household),
+  }));
 }
 
 function openLegacy(life: Life, id: string): void {
@@ -602,40 +641,50 @@ function openLegacy(life: Life, id: string): void {
   life.pending = event.make(life);
 }
 
+function closeStoryYear(draft: Life, rng: Rng): Life {
+  bindPending(draft);
+  draft.rngState = rng.state();
+  trimLog(draft);
+  return draft;
+}
+
 export function playStoryYear(life: Life): Life {
   if (!life.story || life.pending || isFinished(life)) return life;
-  if (life.revealed && life.mortal) return life;
   const draft = clone(life);
   const rng = makeRng(draft.rngState);
-  for (const line of draft.yearLines) {
+  for (let i = 0; i < draft.yearLines.length; i += 1) {
+    const kind = draft.yearKinds[i] ?? "chapter";
     draft.log.push({
       id: nextLogId(draft),
       age: draft.yearAge,
-      kind: "chapter",
-      text: line,
+      kind,
+      text: draft.yearLines[i]!,
       starred: false,
     });
   }
   const age = draft.age;
   draft.yearAge = age;
   draft.yearLines = [];
+  draft.yearKinds = [];
   draft.yearOpen = false;
 
   if (age >= draft.lifespan) {
-    const starved = draft.realm === "spirit" && draft.stones < TUNING.spiritUpkeep;
-    markDeath(draft, starved ? "靈石斷供，化神反噬" : "壽元耗盡");
-    draft.yearLines.push(`${age}歲。${draft.cause}。你停在${realmById(draft.realm).name}。`);
-    draft.rngState = rng.state();
-    trimLog(draft);
-    return draft;
+    if (draft.mortal) {
+      markDeath(draft, "壽元照凡人走完");
+      const home = draft.household?.home ?? `${draft.region}那間屋`;
+      pushYear(draft, `${age}歲。${draft.name}在${home}把日子走完了。`);
+    } else {
+      const starved = draft.realm === "spirit" && draft.stones < TUNING.spiritUpkeep;
+      markDeath(draft, starved ? "靈石斷供，化神反噬" : "壽元耗盡");
+      pushYear(draft, `${age}歲。${draft.cause}。你停在${realmById(draft.realm).name}。`);
+    }
+    return closeStoryYear(draft, rng);
   }
   const ratio = (age + 1) / Math.max(1, draft.lifespan);
-  if (draft.revealed && ratio > 0.93 && rng.next() < (ratio - 0.93) * 0.55) {
+  if (!draft.mortal && draft.revealed && ratio > 0.93 && rng.next() < (ratio - 0.93) * 0.55) {
     markDeath(draft, "壽元將盡");
-    draft.yearLines.push(`${age}歲。壽元將盡。你停在${realmById(draft.realm).name}。`);
-    draft.rngState = rng.state();
-    trimLog(draft);
-    return draft;
+    pushYear(draft, `${age}歲。壽元將盡。你停在${realmById(draft.realm).name}。`);
+    return closeStoryYear(draft, rng);
   }
 
   const testAge = testAgeOf(draft);
@@ -643,22 +692,16 @@ export function playStoryYear(life: Life): Life {
     draft.revealed = true;
     draft.seenEvents.push("root-test");
     if (draft.mortal) {
-      draft.yearLines.push(`${age}歲，有人把你的手按在牌上。牌是冷的。沒有靈根。`);
-      draft.flash = [
-        `${draft.name}，${draft.region}。`,
-        `${age}歲測靈。牌沒有熱。`,
-        "沒有靈根。往後不進修途。",
-        "壽元照凡人走完。",
-      ];
+      pushYear(draft, `${age}歲，有人把你的手按在牌上。牌是冷的。沒有靈根。`);
     } else {
       const root = ROOTS[draft.root];
-      draft.yearLines.push(`${age}歲，有人測你的靈根。牌熱了一下，是${root.name}。${root.flavor}`);
-      draft.age += 1;
-      draft.years += 1;
+      pushYear(draft, `${age}歲，有人測你的靈根。牌熱了一下，是${root.name}。${root.flavor}`);
     }
-    draft.rngState = rng.state();
-    trimLog(draft);
-    return draft;
+    const home = pullHome(draft, age);
+    if (home && draft.yearLines.length < 2) pushYear(draft, home, "home");
+    draft.age += 1;
+    draft.years += 1;
+    return closeStoryYear(draft, rng);
   }
 
   const notes: string[] = [];
@@ -669,44 +712,52 @@ export function playStoryYear(life: Life): Life {
       draft.ending = "edge";
       draft.cause = "化神這一層走到頭了";
       closeSpan(draft, draft.age);
-      draft.yearLines.push(`${age}歲。化神這一層走到頭了，人還在。`);
-      draft.rngState = rng.state();
-      trimLog(draft);
-      return draft;
+      pushYear(draft, `${age}歲。化神這一層走到頭了，人還在。`);
+      return closeStoryYear(draft, rng);
     }
   }
 
   const legacy = dueLegacy(draft, age);
   const two = rng.next() < 0.5;
   if (legacy) {
-    if (two) pushBeat(draft, rng, age);
+    if (two) {
+      const home = pullHome(draft, age);
+      if (home) pushYear(draft, home, "home");
+      else pushBeat(draft, rng, age);
+    }
     openLegacy(draft, legacy);
     draft.yearOpen = Boolean(draft.pending);
-    draft.rngState = rng.state();
-    trimLog(draft);
-    return draft;
+    return closeStoryYear(draft, rng);
   }
   if (draft.revealed && !draft.mortal && age >= 16 && openGate(draft)) {
-    if (two && draft.yearLines.length === 0) pushBeat(draft, rng, age);
+    if (two && draft.yearLines.length === 0) {
+      const home = pullHome(draft, age);
+      if (home) pushYear(draft, home, "home");
+      else pushBeat(draft, rng, age);
+    }
     draft.yearOpen = true;
-    draft.rngState = rng.state();
-    trimLog(draft);
-    return draft;
+    return closeStoryYear(draft, rng);
   }
 
-  const lines: string[] = [];
+  const lines: { text: string; kind: LogEntry["kind"] }[] = [];
+  const cap = two ? 2 : 1;
   const realmNote = notes.find((note) => note.includes("境界"));
-  if (realmNote) lines.push(realmNote);
+  if (realmNote) lines.push({ text: realmNote, kind: "chapter" });
+  if (lines.length < cap) {
+    const home = pullHome(draft, age);
+    if (home) lines.push({ text: home, kind: "home" });
+  }
   if (
+    lines.length < cap &&
     draft.revealed &&
     !draft.mortal &&
     !draft.seenEvents.includes("lifespan-mark") &&
     age >= Math.max(28, Math.floor(draft.lifespan * 0.86))
   ) {
-    lines.push(milestoneBody(draft));
+    lines.push({ text: milestoneBody(draft), kind: "chapter" });
     draft.seenEvents.push("lifespan-mark");
   }
-  const room = Math.max(0, (two ? 2 : 1) - lines.length);
+  const room = Math.max(0, cap - lines.length);
   if (room > 0) {
     const allowChoice = rng.next() < (age < 12 ? 0.16 : 0.34);
     let drawn = drawAffairs(draft, rng, age, room, allowChoice);
@@ -716,7 +767,7 @@ export function playStoryYear(life: Life): Life {
     for (const beat of drawn.beats) {
       if (lines.length >= 2) break;
       draft.seenEvents.push(beat.id);
-      lines.push(applyBeat(draft, rng, beat));
+      lines.push({ text: applyBeat(draft, rng, beat), kind: "chapter" });
     }
     if (drawn.choice && lines.length < 2) {
       draft.seenEvents.push(drawn.choice.id);
@@ -731,16 +782,18 @@ export function playStoryYear(life: Life): Life {
     }
   }
   if (lines.length === 0 && !draft.pending) {
-    lines.push(`${age}歲這一年，你還在。日子照舊過完。`);
+    const lateId = `late-${age}`;
+    const home = draft.household && !draft.household.seen.includes(lateId)
+      ? commitHome(draft.household, lateId, homeCtx(draft, age))
+      : `${age}歲這一年，你還在。日子照舊過完。`;
+    lines.push({ text: home, kind: draft.household ? "home" : "chapter" });
   }
-  draft.yearLines = lines.slice(0, 2);
+  for (const line of lines.slice(0, 2)) pushYear(draft, line.text, line.kind);
   if (!draft.pending) {
     draft.age += 1;
     draft.years += 1;
   }
-  draft.rngState = rng.state();
-  trimLog(draft);
-  return draft;
+  return closeStoryYear(draft, rng);
 }
 
 function threadPending(life: Life, kind: ThreadKind): Pending {
@@ -2445,24 +2498,40 @@ function summarizeCompanion(life: Life): Companion {
 }
 
 function companionChapters(life: Life): Chapter[] {
-  const origin = { age: 16, text: life.origin };
-  const milestones = life.log.filter(
-    (entry) =>
-      entry.kind !== "chapter" ||
-      /停在|成了|沒有成|走到頭|反噬|境界跨到/.test(entry.text),
-  );
-  const last = life.log[life.log.length - 1];
-  const merged = [origin, ...milestones.map((entry) => ({ age: entry.age, text: entry.text }))];
-  if (last && merged[merged.length - 1]?.text !== last.text) {
-    merged.push({ age: last.age, text: last.text });
+  const home = life.log.filter((entry) => entry.kind === "home");
+  const picked: Chapter[] = [];
+  const push = (age: number, text: string) => {
+    if (!text || picked.some((item) => item.text === text)) return;
+    picked.push({ age, text });
+  };
+  if (!life.story) push(16, life.origin);
+  const first = home[0];
+  if (first) push(first.age, first.text);
+  const job = home.find((entry) => entry.text.includes("從這一年"));
+  if (job) push(job.age, job.text);
+  const death = home.find((entry) => entry.text.includes("沒有醒來"));
+  if (death) push(death.age, death.text);
+  const kin = home.find((entry) => entry.text.includes("進門") && entry !== first);
+  if (kin) push(kin.age, kin.text);
+  const childLine = home.find((entry) => /生了兒子|生了女兒/.test(entry.text));
+  if (childLine) push(childLine.age, childLine.text);
+  for (const entry of life.log) {
+    if (entry.kind === "home") continue;
+    if (entry.kind !== "chapter" || /停在|成了|沒有成|走到頭|反噬|境界跨到|靈根|牌是冷|牌熱/.test(entry.text)) {
+      push(entry.age, entry.text);
+    }
   }
-  const unique: Chapter[] = [];
-  for (const item of merged) {
-    if (unique.some((have) => have.age === item.age && have.text === item.text)) continue;
-    unique.push(item);
+  const lastHome = home[home.length - 1];
+  if (lastHome) push(lastHome.age, lastHome.text);
+  picked.sort((a, b) => a.age - b.age || a.text.length - b.text.length);
+  if (picked.length <= 16) return picked;
+  const keep = new Set<string>();
+  for (const item of [first, job, death, kin, childLine, lastHome]) {
+    if (item) keep.add(item.text);
   }
-  if (unique.length <= 16) return unique;
-  return [unique[0], ...unique.slice(-15)];
+  const head = picked.filter((item) => keep.has(item.text));
+  const rest = picked.filter((item) => !keep.has(item.text)).slice(-Math.max(0, 16 - head.length));
+  return [...head, ...rest].sort((a, b) => a.age - b.age);
 }
 
 function pushLog(life: Life, kind: LogEntry["kind"], text: string): void {
@@ -2470,7 +2539,7 @@ function pushLog(life: Life, kind: LogEntry["kind"], text: string): void {
     id: nextLogId(life),
     age: life.age,
     kind,
-    text,
+    text: bindHousehold(text, life.household),
     starred: false,
   });
 }
@@ -2487,9 +2556,21 @@ function trimLog(life: Life): void {
     if (entry.starred || entry.kind === "choice" || entry.kind === "pause" || entry.kind === "system") {
       keep.add(entry.id);
     }
+    if (entry.kind === "home" && /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在/.test(entry.text)) {
+      keep.add(entry.id);
+    }
   }
   for (const entry of life.log.slice(-16)) keep.add(entry.id);
-  life.log = life.log.filter((entry) => keep.has(entry.id)).slice(-48);
+  const kept = life.log.filter((entry) => keep.has(entry.id));
+  if (kept.length <= 48) {
+    life.log = kept;
+    return;
+  }
+  const landmark = /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在/;
+  const must = new Set(kept.filter((entry) => entry.kind === "home" && landmark.test(entry.text)).map((entry) => entry.id));
+  const rest = kept.filter((entry) => !must.has(entry.id)).slice(-(48 - must.size));
+  const restIds = new Set(rest.map((entry) => entry.id));
+  life.log = life.log.filter((entry) => must.has(entry.id) || restIds.has(entry.id));
 }
 
 function pick<T>(rng: Rng, items: readonly T[]): T {

@@ -1,7 +1,8 @@
 import { AFFAIRS, type Affair } from "@/lib/affair-data";
+import { bindHousehold, householdBlocks, type Household } from "@/lib/household";
 
 export { AFFAIRS };
-import type { OriginId, RootId } from "@/lib/world";
+import { SECTS, type OriginId, type RootId } from "@/lib/world";
 
 type Rng = { next: () => number };
 
@@ -21,6 +22,8 @@ export type AffairHost = {
   originId: OriginId;
   root: RootId;
   seenEvents: string[];
+  household?: Household | null;
+  mortal?: boolean;
 };
 
 function pick<T>(rng: Rng, items: readonly T[]): T {
@@ -43,10 +46,14 @@ export function eligibleAffairs(life: AffairHost, age: number): Affair[] {
     if (life.seenEvents.includes(item.id)) return false;
     if (age < item.minAge || age > item.maxAge) return false;
     if (item.origin && item.origin !== life.originId) return false;
+    if (life.mortal && item.root) return false;
     if (item.root && item.root !== life.root) return false;
     if (age < 12 && (item.maxAge > 22 || item.shape === "cave" || item.shape === "page" || item.shape === "risk")) {
       return false;
     }
+    const blob = `${item.title}${item.text}${item.choices.map((choice) => choice.label + choice.line).join("")}`;
+    if (age > 0 && /接生|添了你/.test(blob)) return false;
+    if (householdBlocks(life.household, life.mortal, blob, item.shape)) return false;
     return true;
   });
 }
@@ -82,7 +89,7 @@ export function applyBeat(life: AffairHost, rng: Rng, affair: Affair): string {
     life.scarred = true;
   }
   life.stones = Math.max(0, Math.round(life.stones));
-  return affair.text;
+  return bindHousehold(affair.text, life.household);
 }
 
 export function affairChoices(life: { originId: OriginId }, affair: Affair): { id: string; label: string; hint: string }[] {
@@ -139,7 +146,10 @@ export function resolveAffair(
   const index = which === "b" ? 1 : 0;
   const chosen = affair.choices[index];
   if (index === 0) {
-    if (affair.shape === "sect") life.sect = life.sect ?? "記名的地方";
+    if (affair.shape === "sect" && !life.sect) {
+      const salt = [...(life.household?.hamlet ?? life.originId)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+      life.sect = SECTS[salt % SECTS.length] ?? "青汀門";
+    }
     if (affair.shape === "owe") life.owed = true;
     if (affair.shape === "page") {
       life.manual = life.manual ?? affair.title;
