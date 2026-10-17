@@ -135,6 +135,7 @@ export function LifeView({
           </p>
           <FriendStrip
             life={life}
+            age={life.story ? life.yearAge : life.age}
             className="mt-4 lg:hidden"
             onOpen={(companion) => {
               if (auto && !paused) onPause();
@@ -340,6 +341,7 @@ export function LifeView({
           </div>
           <FriendStrip
             life={life}
+            age={life.story ? life.yearAge : life.age}
             onOpen={(companion) => {
               if (auto && !paused) onPause();
               setReading(companion);
@@ -407,10 +409,12 @@ function Tools({
 
 function FriendStrip({
   life,
+  age,
   onOpen,
   className,
 }: {
   life: Life;
+  age: number;
   onOpen: (companion: Companion) => void;
   className?: string;
 }) {
@@ -422,7 +426,7 @@ function FriendStrip({
       </h2>
       <ul className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
         {life.companions.map((companion) => {
-          const now = companionNow(companion, life.age);
+          const now = companionNow(companion, age);
           return (
             <li key={companion.name}>
               <button
