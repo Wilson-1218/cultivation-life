@@ -158,6 +158,7 @@ export type Life = {
   thread: LifeThread | null;
   household: Household | null;
   yearKinds: LogEntry["kind"][];
+  heartByAge: number[];
 };
 
 type Rng = {
@@ -302,6 +303,7 @@ export function createLife(
     thread: story ? (setup.thread ?? null) : null,
     household: null,
     yearKinds: [],
+    heartByAge: [],
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -389,7 +391,7 @@ export function advance(life: Life, years?: number): Life {
   return draft;
 }
 
-export function applyChoice(life: Life, choiceId: string): Life {
+export function applyChoice(life: Life, choiceId: string, options?: { auto?: boolean }): Life {
   if (life.pending?.type !== "choice" || isFinished(life)) return life;
   const draft = clone(life);
   const rng = makeRng(draft.rngState);
@@ -399,20 +401,28 @@ export function applyChoice(life: Life, choiceId: string): Life {
   if (!known) {
     throw new Error("這個抉擇不在這一頁上");
   }
+  const picked = pending.choices.find((choice) => choice.id === choiceId);
   draft.pending = null;
   const logAt = draft.log.length;
   resolveChoice(draft, rng, pending.id, choiceId);
   if (draft.story) {
     const fresh = draft.log.splice(logAt);
-    for (const entry of fresh) {
-      draft.yearLines.push(entry.text);
-      draft.yearKinds.push(entry.kind);
+    const marked = options?.auto && picked ? `（自動選了「${picked.label}」）` : "";
+    if (fresh.length === 0 && marked) {
+      draft.yearLines.push(marked);
+      draft.yearKinds.push("choice");
     }
+    fresh.forEach((entry, index) => {
+      const text = marked && index === fresh.length - 1 ? `${entry.text}${marked}` : entry.text;
+      draft.yearLines.push(text);
+      draft.yearKinds.push(entry.kind);
+    });
     draft.yearOpen = false;
     if (!draft.dead && draft.ending !== "edge") {
       draft.age += 1;
       draft.years += 1;
     }
+    noteHeart(draft);
   }
   draft.rngState = rng.state();
   trimLog(draft);
@@ -472,6 +482,21 @@ export function autoChoiceId(life: Life): string {
     Math.floor(roll * life.pending.choices.length),
   );
   return life.pending.choices[index].id;
+}
+
+const LETHAL_CHOICE = /上前|爭奪|撞|對上|硬扛|讓出來|奪回來|硬壓|擠進去/;
+
+export function safeChoiceId(life: Life): string {
+  if (life.pending?.type !== "choice") {
+    throw new Error("現在沒有要代選的抉擇");
+  }
+  const choices = life.pending.choices;
+  const run = choices.find((choice) => choice.label.includes("跑路"));
+  if (run) return run.id;
+  const calm = choices.find(
+    (choice) => !LETHAL_CHOICE.test(choice.label) && !/寫成奪舍|多半出不去|多半留不下|可能死/.test(choice.hint),
+  );
+  return (calm ?? choices[0]).id;
 }
 
 export function steadyChoiceId(life: Life): string {
@@ -641,7 +666,12 @@ function openLegacy(life: Life, id: string): void {
   life.pending = event.make(life);
 }
 
+function noteHeart(life: Life): void {
+  life.heartByAge[life.yearAge] = Math.round(life.heart);
+}
+
 function closeStoryYear(draft: Life, rng: Rng): Life {
+  noteHeart(draft);
   bindPending(draft);
   draft.rngState = rng.state();
   trimLog(draft);

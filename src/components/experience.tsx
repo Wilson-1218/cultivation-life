@@ -10,7 +10,6 @@ import {
   advance,
   applyChoice,
   applyReflection,
-  autoChoiceId,
   burialOf,
   carryFoe,
   carryHaunt,
@@ -21,6 +20,7 @@ import {
   heavenPoints,
   isFinished,
   randomSeed,
+  safeChoiceId,
   toggleStar,
   type Life,
 } from "@/lib/engine";
@@ -28,6 +28,10 @@ import { clearBuried, clearFoe, clearHaunt, clearThread, consumeKarma, grantKarm
 import { ROOTS, WORLDS, realmById, type FocusId, type Setup } from "@/lib/world";
 
 type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
+
+export type PlaySpeed = 1 | 2 | 4 | 8 | 12 | 16;
+
+const YEAR_MS = 880;
 
 const INITIAL: Setup = {
   world: "now",
@@ -42,6 +46,7 @@ export function Experience() {
   const [life, setLife] = useState<Life | null>(null);
   const [paused, setPaused] = useState(false);
   const [auto, setAuto] = useState(false);
+  const [speed, setSpeed] = useState<PlaySpeed>(1);
   const [fault, setFault] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,9 +70,9 @@ export function Experience() {
           if (!current || isFinished(current) || !current.pending) return current;
           try {
             if (current.pending.type === "choice") {
-              const choiceId = autoChoiceId(current);
+              const choiceId = safeChoiceId(current);
               settleCarry(choiceId);
-              return applyChoice(current, choiceId);
+              return applyChoice(current, choiceId, { auto: true });
             }
             if (current.pending.type === "reflect") return applyReflection(current, "");
           } catch {
@@ -75,7 +80,7 @@ export function Experience() {
           }
           return current;
         });
-      }, 780);
+      }, 640);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => {
@@ -88,9 +93,9 @@ export function Experience() {
           return current;
         }
       });
-    }, 850);
+    }, Math.max(48, Math.round(YEAR_MS / speed)));
     return () => window.clearTimeout(timer);
-  }, [phase, auto, paused, life, fault]);
+  }, [phase, auto, paused, life, fault, speed]);
 
   function remember(current: Life) {
     const line = current.reflections.find((item) => item.id === "farewell")?.text ?? "";
@@ -109,6 +114,7 @@ export function Experience() {
     setFault(null);
     setAuto(false);
     setPaused(false);
+    setSpeed(1);
     try {
       setLife(createLife(nextSetup, { story: true }));
       setSetup(nextSetup);
@@ -215,8 +221,27 @@ export function Experience() {
       life={life}
       paused={paused}
       auto={auto}
+      speed={speed}
       onPause={() => setPaused((value) => !value)}
       onAuto={() => setAuto((value) => !value)}
+      onSpeed={setSpeed}
+      onSkip={() => {
+        setLife((current) => {
+          if (!current || current.pending || isFinished(current)) return current;
+          try {
+            let next = current;
+            let guard = 0;
+            while (!isFinished(next) && !next.pending && guard < 500) {
+              next = playStoryYear(next);
+              guard += 1;
+            }
+            return next;
+          } catch {
+            setFault("這一步沒有走成。");
+            return current;
+          }
+        });
+      }}
       onFocus={(focus: FocusId) => setLife((current) => (current ? { ...current, focus } : current))}
       onAdvance={() => {
         if (isFinished(life)) {
