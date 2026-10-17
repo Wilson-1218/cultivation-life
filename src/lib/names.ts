@@ -27,6 +27,57 @@ function mix(seed: number, salt: number): number {
   return (x ^ (x >>> 16)) >>> 0;
 }
 
+const MALE_GIVEN = [
+  "德明", "文遠", "成安", "守業", "伯年", "景行", "承志", "嘉樹",
+  "懷德", "永年", "叔平", "季良", "宗賢", "廷玉", "克勤", "世昌",
+  "明遠", "彥清", "子安", "弘毅", "維周", "國梁", "正衡", "裕後",
+] as const;
+
+const FEMALE_GIVEN = [
+  "秀珍", "淑芬", "慧蘭", "玉琴", "春梅", "婉清", "雅芝", "素心",
+  "秋月", "麗華", "靜宜", "巧雲", "碧霞", "桂英", "瑞珠", "佩蘭",
+  "雪梅", "翠屏", "鳳儀", "采薇", "清照", "若蘭", "曼卿", "書玉",
+] as const;
+
+export function kinName(
+  seed: number,
+  salt: number,
+  surname: string,
+  gender: "m" | "f",
+  avoid: Set<string>,
+): string {
+  const pool = gender === "m" ? MALE_GIVEN : FEMALE_GIVEN;
+  const start = mix(seed || 1, salt || 1);
+  for (let n = 0; n < pool.length; n += 1) {
+    const given = pool[(start + n) % pool.length]!;
+    if (given[0] === surname) continue;
+    const name = `${surname}${given}`;
+    if (avoid.has(name) || name.length < 3) continue;
+    avoid.add(name);
+    return name;
+  }
+  const name = `${surname}${gender === "m" ? "德明" : "秀珍"}`;
+  avoid.add(name);
+  return name;
+}
+
+export function outsiderName(
+  seed: number,
+  salt: number,
+  avoidSurname: string,
+  gender: "m" | "f",
+  avoid: Set<string>,
+): string {
+  const start = mix(seed || 1, salt || 1);
+  for (let n = 0; n < SURNAMES.length; n += 1) {
+    const surname = SURNAMES[(start + n) % SURNAMES.length]!;
+    if (surname === avoidSurname) continue;
+    const name = kinName(seed, salt + 20 + n, surname, gender, avoid);
+    if (name[0] !== avoidSurname) return name;
+  }
+  return kinName(seed, salt + 80, "陳", gender, avoid);
+}
+
 export function humanName(seed: number, salt: number): string {
   const n = mix(seed || 1, salt || 1);
   const surname = SURNAMES[n % SURNAMES.length];

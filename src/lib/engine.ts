@@ -2515,6 +2515,10 @@ function companionChapters(life: Life): Chapter[] {
   if (kin) push(kin.age, kin.text);
   const childLine = home.find((entry) => /生了兒子|生了女兒/.test(entry.text));
   if (childLine) push(childLine.age, childLine.text);
+  const affair = home.find((entry) =>
+    /吵了一架|和好了|分家|認字|傳給你|節日|沒有回來|缺錢|辦了喪|娶了|嫁了|風寒|過壽|舊事/.test(entry.text),
+  );
+  if (affair) push(affair.age, affair.text);
   for (const entry of life.log) {
     if (entry.kind === "home") continue;
     if (entry.kind !== "chapter" || /停在|成了|沒有成|走到頭|反噬|境界跨到|靈根|牌是冷|牌熱/.test(entry.text)) {
@@ -2526,7 +2530,7 @@ function companionChapters(life: Life): Chapter[] {
   picked.sort((a, b) => a.age - b.age || a.text.length - b.text.length);
   if (picked.length <= 16) return picked;
   const keep = new Set<string>();
-  for (const item of [first, job, death, kin, childLine, lastHome]) {
+  for (const item of [first, job, death, kin, childLine, affair, lastHome]) {
     if (item) keep.add(item.text);
   }
   const head = picked.filter((item) => keep.has(item.text));
@@ -2556,7 +2560,7 @@ function trimLog(life: Life): void {
     if (entry.starred || entry.kind === "choice" || entry.kind === "pause" || entry.kind === "system") {
       keep.add(entry.id);
     }
-    if (entry.kind === "home" && /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在/.test(entry.text)) {
+    if (entry.kind === "home" && /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在|吵了一架|和好了|分家|認字|傳給你|節日|沒有回來|缺錢|辦了喪|娶了|嫁了|風寒|過壽|舊事/.test(entry.text)) {
       keep.add(entry.id);
     }
   }
@@ -2566,7 +2570,7 @@ function trimLog(life: Life): void {
     life.log = kept;
     return;
   }
-  const landmark = /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在/;
+  const landmark = /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在|吵了一架|和好了|分家|認字|傳給你|節日|沒有回來|缺錢|辦了喪|娶了|嫁了|風寒|過壽|舊事/;
   const must = new Set(kept.filter((entry) => entry.kind === "home" && landmark.test(entry.text)).map((entry) => entry.id));
   const rest = kept.filter((entry) => !must.has(entry.id)).slice(-(48 - must.size));
   const restIds = new Set(rest.map((entry) => entry.id));
