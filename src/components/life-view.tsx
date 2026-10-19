@@ -372,15 +372,13 @@ export function LifeView({
           <section className="border border-border bg-card p-4">
             <h2 className="text-sm text-muted-foreground">家人與生活</h2>
             <ul className="mt-3 flex flex-col text-sm leading-6">
-              <li className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,9rem)] items-center gap-2 border-b border-border/70 py-2">
-                <img src={figures.get(life.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
-                <span>你</span>
-                <span className="text-right text-muted-foreground">{describeWork(house, age)}</span>
+              <li className="flex items-baseline justify-between gap-3 border-b border-border/70 py-2">
+                <span className="shrink-0 whitespace-nowrap">你</span>
+                <span className="min-w-0 text-right text-muted-foreground">{describeWork(house, age)}</span>
               </li>
               {kinRows(house, age).map((row) => (
-                <li key={row.who} className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,9rem)] items-center gap-2 border-b border-border/70 py-2">
-                  <img src={figures.get(row.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
-                  <span className="min-w-0 break-words">{row.who}</span>
+                <li key={row.who} className="flex items-baseline justify-between gap-3 border-b border-border/70 py-2">
+                  <span className="shrink-0 whitespace-nowrap">{row.who}</span>
                   <span className="min-w-0 text-right text-muted-foreground">{row.doing}</span>
                 </li>
               ))}
@@ -404,7 +402,7 @@ export function LifeView({
                     <button
                       type="button"
                       className={cn(
-                        "grid w-full min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a]",
+                        "flex w-full min-w-0 items-baseline justify-between gap-3 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a]",
                         !now.alive && "text-muted-foreground",
                       )}
                       onClick={() => {
@@ -412,8 +410,7 @@ export function LifeView({
                         setReading(companion);
                       }}
                     >
-                      <img src={figures.get(companion.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
-                      <span className="min-w-0 break-words">{companion.name}</span>
+                      <span className="shrink-0 whitespace-nowrap">{companion.name}</span>
                       <span className="shrink-0 text-right">{stage}</span>
                     </button>
                   </li>
