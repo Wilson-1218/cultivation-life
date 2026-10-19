@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { heavenPoints, karmaSentence, type Companion, type Life } from "@/lib/engine";
 import type { Household } from "@/lib/household";
+import { figureMap } from "@/lib/figures";
 import { ORIGINS, REALMS, ROOTS, censusTotal, formatPeople, realmById } from "@/lib/world";
 
 export function EndView({
@@ -37,6 +38,7 @@ export function EndView({
   const share = outlivedPercent(life.age);
   const markAge = life.mortal ? life.lifespan : realm.lifespan;
   const peers = life.companions.map((companion) => `${companion.name} ${companion.finalAge}歲`);
+  const portrait = figureMap(life).get(life.name);
   const calm = calmestYear(life.heartByAge);
 
   return (
@@ -50,7 +52,7 @@ export function EndView({
         <div className="px-4 py-5 sm:px-5">
           <p className="text-xs tracking-[0.14em] text-muted-foreground">人生紀錄</p>
           <div className="mt-3 flex items-start gap-4">
-            <InkPortrait />
+            <img src={portrait} alt="" className="h-28 w-20 shrink-0 object-contain mix-blend-multiply" />
             <div className="min-w-0">
               <p className="text-sm text-[#3d6b62]">
                 {life.mortal ? "無靈根" : root.name} · {life.mortal ? "凡人" : realm.name}
@@ -66,12 +68,12 @@ export function EndView({
           </div>
 
           <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 min-[420px]:grid-cols-2">
-            <Cell label="出身" value={ORIGINS[life.originId].name} />
-            <Cell label="最後的生計" value={livelihood(house)} />
+            <Cell label="出身" value={originProse(life)} />
+            <Cell label="最後的生計" value={livelihood(life)} />
             <Cell label="住過的地方" value={placesLived(life)} />
-            <Cell label="家人" value={familyCount(house)} />
-            <Cell label="宗門" value={life.sect ?? "沒有進宗門"} />
-            <Cell label="死因" value={life.cause || (alive ? "還活著" : "停在這裡")} prominent />
+            <Cell label="家人" value={familyStory(house)} />
+            <Cell label="宗門" value={sectProse(life)} />
+            <Cell label="死因" value={causeProse(life, place)} prominent />
           </dl>
 
           <div className="mt-6 grid items-end gap-5 lg:grid-cols-[minmax(0,1fr)_16rem]">
@@ -201,44 +203,48 @@ function Cell({ label, value, prominent }: { label: string; value: string; promi
   );
 }
 
-function InkPortrait() {
-  return (
-    <svg
-      viewBox="0 0 72 88"
-      className="h-24 w-20 shrink-0 text-foreground"
-      aria-hidden
-    >
-      <rect x="1" y="1" width="70" height="86" fill="#f3eadc" stroke="currentColor" strokeWidth="1" />
-      <circle cx="36" cy="32" r="14" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M24 28c2-6 8-8 12-8s10 2 12 8" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M30 32h.5M42 32h.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M33 38c2 2 4 2 6 0" fill="none" stroke="currentColor" strokeWidth="1.1" />
-      <path d="M22 78c2-16 8-22 14-22s12 6 14 22" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M28 56h16" stroke="currentColor" strokeWidth="1" />
-    </svg>
-  );
+function originProse(life: Life): string {
+  const origin = ORIGINS[life.originId];
+  const house = life.household;
+  if (!house) return `${origin.name}。${origin.flavor}`;
+  return `${origin.name}。生在${house.region}的${house.hamlet}，${house.home}裡把你養大的是父親${house.father.name}、母親${house.mother.name}。${origin.flavor}`;
 }
 
-function livelihood(house: Household | null): string {
-  if (!house || !house.seen.includes("job")) return "還沒開始做事";
-  return `${house.jobPlace}${house.job}`;
+function livelihood(life: Life): string {
+  const house = life.household;
+  if (!house || !house.seen.includes("job")) return "這一世還沒開始做事，日子停在家裡。";
+  return `在${house.jobPlace}${house.job}，從${house.jobSince}歲做到走的時候。晚上還是回${house.hamlet}的${house.home}。`;
+}
+
+function sectProse(life: Life): string {
+  const house = life.household;
+  if (!life.sect) return house ? `沒有進宗門，日子都在${house.hamlet}。` : "沒有進宗門。";
+  return house ? `進了${life.sect}，人還是回${house.hamlet}的屋子。` : `進了${life.sect}。`;
+}
+
+function causeProse(life: Life, place: string): string {
+  const cause = life.cause || (life.ending === "edge" ? "人還在" : "停在這裡");
+  if (life.ending === "edge") return `${cause}。人還在${place}。`;
+  return `${cause}。日子停在${place}，沒有再往下走。`;
 }
 
 function placesLived(life: Life): string {
   const house = life.household;
-  if (!house) return life.region;
-  const spots = [house.hamlet, house.market, house.river, house.mountain, house.yard];
+  if (!house) return `人在${life.region}走完。`;
+  const spots = [house.market, house.river, house.mountain, house.yard];
   if (life.sect) spots.push(life.sect);
-  return [...new Set(spots)].join("、");
+  return `住在${house.hamlet}的${house.home}。日子也經過${[...new Set(spots)].join("、")}。`;
 }
 
-function familyCount(house: Household | null): string {
-  if (!house) return "沒有寫上";
+function familyStory(house: Household | null): string {
+  if (!house) return "沒有寫上家人。";
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
   const known = people.filter((kin) => kin.present || kin.dead || kin.away);
-  const home = known.filter((kin) => kin.present && !kin.dead && !kin.away).map((kin) => kin.name);
-  if (home.length === 0) return `${known.length}人，走的時候屋裡沒有別人`;
-  return `${known.length}人，走時還在的是${home.join("、")}`;
+  const home = known.filter((kin) => kin.present && !kin.dead && !kin.away);
+  const gone = known.filter((kin) => kin.dead);
+  const homeText = home.length === 0 ? "走的時候屋裡沒有別人" : `走時還在的是${home.map((kin) => kin.name).join("、")}`;
+  const goneText = gone.length === 0 ? "" : `已經不在的是${gone.map((kin) => kin.name).join("、")}。`;
+  return `家裡先後有${known.length}人。${homeText}。${goneText}`;
 }
 
 function calmestYear(hearts: number[]): number | null {

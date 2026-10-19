@@ -14,9 +14,11 @@ import { ROOTS, realmById } from "@/lib/world";
 
 export function CompanionLife({
   companion,
+  figure,
   onClose,
 }: {
   companion: Companion | null;
+  figure?: string;
   onClose: () => void;
 }) {
   const open = companion !== null;
@@ -46,6 +48,13 @@ export function CompanionLife({
                   </span>
                 </span>
                 <span className="mt-1 block">同一套規則走出的短章，看完就回到你自己的人生。</span>
+                {figure ? (
+                  <img src={figure} alt="" className="mt-3 h-24 w-16 object-contain mix-blend-multiply" />
+                ) : null}
+                <span className="mt-2 block">
+                  {companion.chapters.find((chapter) => chapter.text.startsWith("家在"))?.text}{" "}
+                  {companion.chapters.find((chapter) => chapter.text.includes("停下來") || chapter.text.includes("人還在"))?.text}
+                </span>
               </DialogDescription>
             </DialogHeader>
             <ol className="flex max-h-[min(38vh,22rem)] flex-col gap-4 overflow-y-auto pr-1">

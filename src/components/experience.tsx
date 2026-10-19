@@ -16,6 +16,9 @@ import {
   carryThread,
   createLife,
   playStoryYear,
+  chooseAim,
+  payStone,
+  armAutoSpend,
   finishMortal,
   heavenPoints,
   isFinished,
@@ -25,7 +28,8 @@ import {
   type Life,
 } from "@/lib/engine";
 import { clearBuried, clearFoe, clearHaunt, clearThread, consumeKarma, grantKarma, upsertPast, type PastLife } from "@/lib/storage";
-import { ROOTS, WORLDS, realmById, type FocusId, type Setup } from "@/lib/world";
+import type { AimId, SpendId } from "@/lib/aims";
+import { ROOTS, WORLDS, realmById, type Setup } from "@/lib/world";
 
 type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
 
@@ -242,7 +246,12 @@ export function Experience() {
           }
         });
       }}
-      onFocus={(focus: FocusId) => setLife((current) => (current ? { ...current, focus } : current))}
+      onAim={(aim: AimId) => {
+        setPaused(true);
+        setLife((current) => (current ? chooseAim(current, aim) : current));
+      }}
+      onSpend={(id: SpendId) => setLife((current) => (current ? payStone(current, id) : current))}
+      onAutoSpend={(id: SpendId) => setLife((current) => (current ? armAutoSpend(current, id) : current))}
       onAdvance={() => {
         if (isFinished(life)) {
           remember(life);

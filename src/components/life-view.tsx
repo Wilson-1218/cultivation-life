@@ -15,16 +15,15 @@ import { Input } from "@/components/ui/input";
 import { CompanionLife } from "@/components/companion-life";
 import { Mark, buttonMark, choiceMarks, passageMark } from "@/components/marks";
 import { companionNow, type Companion, type Life } from "@/lib/engine";
-import type { Household, Kin } from "@/lib/household";
+import { aimOptions, spendOffers, type AimId, type SpendId } from "@/lib/aims";
+import { figureMap } from "@/lib/figures";
+import { describeWork, kinDoing, yearMatter, type Household, type Kin } from "@/lib/household";
 import {
-  FOCUS_ORDER,
-  FOCUSES,
   ORIGINS,
   ROOTS,
   formatCount,
   formatPeople,
   realmById,
-  type FocusId,
 } from "@/lib/world";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +39,9 @@ export function LifeView({
   onAuto,
   onSpeed,
   onSkip,
-  onFocus,
+  onAim,
+  onSpend,
+  onAutoSpend,
   onAdvance,
   onChoice,
   onReflect,
@@ -55,7 +56,9 @@ export function LifeView({
   onAuto: () => void;
   onSpeed: (speed: PlaySpeed) => void;
   onSkip: () => void;
-  onFocus: (focus: FocusId) => void;
+  onAim: (aim: AimId) => void;
+  onSpend: (id: SpendId) => void;
+  onAutoSpend: (id: SpendId) => void;
   onAdvance: () => void;
   onChoice: (id: string) => void;
   onReflect: (text: string) => void;
@@ -63,6 +66,7 @@ export function LifeView({
   onAbandon: () => void;
 }) {
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [spendOpen, setSpendOpen] = useState(false);
   const [reading, setReading] = useState<Companion | null>(null);
   const reflectId = life.pending?.type === "reflect" ? life.pending.id : "";
   const [draftState, setDraftState] = useState({ id: "", text: "" });
@@ -70,7 +74,6 @@ export function LifeView({
 
   const choice = life.pending?.type === "choice" ? life.pending : null;
   const finished = life.dead || life.ending === "edge";
-  const waiting = Boolean(life.pending) || finished;
   const realm = realmById(life.realm);
   const age = life.story ? life.yearAge : life.age;
   const house = life.household;
@@ -79,6 +82,12 @@ export function LifeView({
   const rootLabel = life.story && !life.revealed ? "尚未測靈" : life.mortal ? "無靈根" : ROOTS[life.root].name;
   const realmLabel = life.mortal && life.revealed ? "凡人" : realm.name;
   const commonAge = life.mortal && life.revealed ? life.lifespan : realm.lifespan;
+  const figures = figureMap(life);
+  const placeLine = house ? `${age}歲 · ${house.region}的${house.hamlet}` : `${age}歲 · ${life.region}`;
+  const highRealm = !life.mortal && life.revealed && !realm.id.startsWith("qi-");
+  const aims = aimOptions(age, highRealm);
+  const spouseState = !house || !house.spouse.present || house.spouse.dead ? "none" : house.spouse.away ? "apart" : "here";
+  const offers = spendOffers({ age, mortal: life.mortal, realm: life.realm, spouse: spouseState });
 
   return (
     <div className="min-h-dvh overflow-x-hidden pb-8">
@@ -146,6 +155,11 @@ export function LifeView({
       <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[16.5rem_minmax(0,1fr)_18rem] lg:gap-5">
         <section aria-label="這個人" className="min-w-0 border border-border bg-card p-4">
           <p className="text-xs tracking-[0.14em] text-muted-foreground">這個人</p>
+          <img
+            src={figures.get(life.name)}
+            alt=""
+            className="mt-3 h-36 w-28 object-contain mix-blend-multiply"
+          />
           <h1 className="mt-2 break-words text-3xl font-semibold">{life.name}</h1>
           <dl className="mt-4 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-2 text-sm">
             <dt className="text-muted-foreground">靈根</dt>
@@ -196,10 +210,47 @@ export function LifeView({
 
         <div className="min-w-0">
           <section className="border border-border bg-card p-4 sm:p-5" aria-live="polite">
-            <p className="text-sm text-muted-foreground">今年的重心</p>
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm text-muted-foreground">今年的重心</p>
+              <p className="text-xs text-muted-foreground">隨時可以改</p>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{placeLine}</p>
             {life.story ? (
               <>
-                <h2 className="mt-2 text-2xl font-semibold">{age}歲</h2>
+                <h2 className="mt-2 text-xl font-semibold leading-8">{yearMatter(house, age, life.region)}</h2>
+                <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="今年的重心">
+                  {aims.map((item) => {
+                    const on = life.aim === item.id;
+                    return (
+                      <Button
+                        key={item.id}
+                        variant="outline"
+                        aria-pressed={on}
+                        className={cn(
+                          "h-auto min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal",
+                          on && "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background",
+                        )}
+                        onClick={() => onAim(item.id)}
+                      >
+                        <span className="text-sm">{item.name}</span>
+                        <span className={cn("text-xs font-normal", on ? "text-background/80" : "text-muted-foreground")}>
+                          {item.up} {item.down}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                  <Button
+                    variant="outline"
+                    className="h-auto flex-col items-start px-3 py-2 text-left whitespace-normal"
+                    onClick={() => {
+                      setSpendOpen(true);
+                      if (!paused) onPause();
+                    }}
+                  >
+                    <span className="text-sm">靈石</span>
+                    <span className="text-xs font-normal text-muted-foreground">打開花費</span>
+                  </Button>
+                </div>
                 {choice ? (
                   <p className="mt-2 text-sm leading-6 text-[#9c2f2a]">這一年停住了。選完才往下走。</p>
                 ) : null}
@@ -276,27 +327,6 @@ export function LifeView({
           </section>
 
           <section className="mt-4">
-            <h2 className="text-sm text-muted-foreground">這一段的重心</h2>
-            <div className="mt-2 grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-5" role="group" aria-label="這一段的重心">
-              {FOCUS_ORDER.map((id) => {
-                const on = life.focus === id;
-                return (
-                  <Button
-                    key={id}
-                    variant="ghost"
-                    disabled={waiting}
-                    aria-pressed={on}
-                    className={cn(
-                      "h-11 rounded-none bg-card max-sm:last:col-span-2",
-                      on && "bg-foreground text-background hover:bg-foreground hover:text-background",
-                    )}
-                    onClick={() => onFocus(id)}
-                  >
-                    {FOCUSES[id].name}
-                  </Button>
-                );
-              })}
-            </div>
             {life.story && !finished ? null : (
               <div className="mt-4">
                 <Button className="h-12 w-full px-6 text-base md:w-auto" disabled={!finished && Boolean(life.pending)} onClick={onAdvance}>
@@ -342,14 +372,16 @@ export function LifeView({
           <section className="border border-border bg-card p-4">
             <h2 className="text-sm text-muted-foreground">家人與生活</h2>
             <ul className="mt-3 flex flex-col text-sm leading-6">
-              <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border/70 py-2">
+              <li className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,9rem)] items-center gap-2 border-b border-border/70 py-2">
+                <img src={figures.get(life.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
                 <span>你</span>
-                <span className="text-right text-muted-foreground">{workDoing(house, age)}</span>
+                <span className="text-right text-muted-foreground">{describeWork(house, age)}</span>
               </li>
               {kinRows(house, age).map((row) => (
-                <li key={row.who} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border/70 py-2">
+                <li key={row.who} className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,9rem)] items-center gap-2 border-b border-border/70 py-2">
+                  <img src={figures.get(row.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
                   <span className="min-w-0 break-words">{row.who}</span>
-                  <span className="shrink-0 text-right text-muted-foreground">{row.doing}</span>
+                  <span className="min-w-0 text-right text-muted-foreground">{row.doing}</span>
                 </li>
               ))}
             </ul>
@@ -372,7 +404,7 @@ export function LifeView({
                     <button
                       type="button"
                       className={cn(
-                        "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a]",
+                        "grid w-full min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a]",
                         !now.alive && "text-muted-foreground",
                       )}
                       onClick={() => {
@@ -380,6 +412,7 @@ export function LifeView({
                         setReading(companion);
                       }}
                     >
+                      <img src={figures.get(companion.name)} alt="" className="h-8 w-8 object-contain mix-blend-multiply" />
                       <span className="min-w-0 break-words">{companion.name}</span>
                       <span className="shrink-0 text-right">{stage}</span>
                     </button>
@@ -402,7 +435,49 @@ export function LifeView({
         </aside>
       </div>
 
-      <CompanionLife companion={reading} onClose={() => setReading(null)} />
+      <CompanionLife
+        companion={reading}
+        figure={reading ? figures.get(reading.name) : undefined}
+        onClose={() => setReading(null)}
+      />
+
+      <Dialog open={spendOpen} onOpenChange={setSpendOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>靈石 · 花費</DialogTitle>
+            <DialogDescription>時間先停著。花出去的會改這一世的日子，不夠的按不了。</DialogDescription>
+          </DialogHeader>
+          <p className="num text-4xl font-semibold">{formatCount(life.stones)} 塊</p>
+          <p className="text-sm text-muted-foreground">現在有的靈石</p>
+          <ul className="mt-2 flex flex-col gap-3">
+            {offers.map((offer) => {
+              const short = Math.max(0, offer.cost - Math.round(life.stones));
+              const armed = life.autoSpend === offer.id;
+              return (
+                <li key={offer.id} className={cn("border p-3", armed ? "border-[#9c2f2a]" : "border-border")}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="font-semibold">{offer.name}</p>
+                    <p className="num shrink-0 text-sm">{offer.cost === 0 ? "不花靈石" : `${offer.cost} 塊`}</p>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{offer.detail}</p>
+                  <p className="mt-1 text-sm leading-6">
+                    {offer.effect}
+                    {armed ? " · 已設為自動" : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button className="h-10" disabled={short > 0} onClick={() => onSpend(offer.id)}>
+                      {short > 0 ? `還差 ${short} 塊` : "花這一筆"}
+                    </Button>
+                    <Button variant="outline" className="h-10" aria-pressed={armed} onClick={() => onAutoSpend(offer.id)}>
+                      {armed ? "取消自動" : "往後自動"}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
         <DialogContent>
@@ -454,28 +529,16 @@ function familyTies(house: Household | null): { score: number; detail: string } 
   return { score, detail: home.length === 0 ? "屋裡沒有別的人" : `${home.length} 人還在` };
 }
 
-function kinRows(house: Household | null, age: number): { who: string; doing: string }[] {
+function kinRows(house: Household | null, age: number): { name: string; who: string; doing: string }[] {
   if (!house) return [];
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
-  return people.map((kin) => kinParts(kin, age)).filter((row): row is { who: string; doing: string } => Boolean(row));
+  return people
+    .map((kin) => kinParts(kin, house, age))
+    .filter((row): row is { name: string; who: string; doing: string } => Boolean(row));
 }
 
-function kinParts(kin: Kin, age: number): { who: string; doing: string } | null {
+function kinParts(kin: Kin, house: Household, age: number): { name: string; who: string; doing: string } | null {
   if (!kin.present && !kin.dead && !kin.away) return null;
   const who = kin.role === "spouse" ? kin.name : `${kin.call} ${kin.name}`;
-  let doing = "在家";
-  if (kin.dead) doing = "已經不在";
-  else if (kin.away) doing = "不在這屋";
-  else if (kin.sick) doing = "病著";
-  else if (kin.role === "spouse") doing = "在屋裡";
-  else if (kin.role === "child") doing = "在家裡";
-  const years = kin.role === "child" || (kin.role === "sibling" && kin.born > 0) ? Math.max(0, age - kin.born) : null;
-  if (years != null) doing = `${years}歲 · ${doing}`;
-  return { who, doing };
-}
-
-function workDoing(house: Household | null, age: number): string {
-  if (!house) return "生計還沒寫上";
-  if (!house.seen.includes("job") && age < house.jobSince) return "事情還沒定下來";
-  return `${house.jobPlace}${house.job}`;
+  return { name: kin.name, who, doing: kinDoing(kin, house, age) };
 }

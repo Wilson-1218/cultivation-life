@@ -1,5 +1,7 @@
 import { AFFAIRS, affairChoices, applyBeat, drawAffairs, resolveAffair } from "./affairs";
 import { bindHousehold, buildHousehold, commitHome, dueHome, type HomeContext, type Household } from "./household";
+import type { AimId, SpendId } from "./aims";
+import { beginYearSlant, finishYearSlant, retargetAim, spendStone, toggleAutoSpend } from "./slant";
 import { humanName } from "./names";
 import {
   FOCUSES,
@@ -159,6 +161,11 @@ export type Life = {
   household: Household | null;
   yearKinds: LogEntry["kind"][];
   heartByAge: number[];
+  aim: AimId;
+  aimTuned: AimId | null;
+  autoSpend: SpendId | null;
+  autoSpentAge: number;
+  jobNote: string;
 };
 
 type Rng = {
@@ -304,6 +311,11 @@ export function createLife(
     household: null,
     yearKinds: [],
     heartByAge: [],
+    aim: "cultivate",
+    aimTuned: null,
+    autoSpend: null,
+    autoSpentAge: -1,
+    jobNote: "",
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -408,14 +420,19 @@ export function applyChoice(life: Life, choiceId: string, options?: { auto?: boo
   if (draft.story) {
     const fresh = draft.log.splice(logAt);
     const marked = options?.auto && picked ? `（自動選了「${picked.label}」）` : "";
-    if (fresh.length === 0 && marked) {
-      draft.yearLines.push(marked);
-      draft.yearKinds.push("choice");
-    }
+    const fold = (text: string, kind: LogEntry["kind"]) => {
+      if (draft.yearLines.length < 2) {
+        draft.yearLines.push(text);
+        draft.yearKinds.push(kind);
+        return;
+      }
+      const last = draft.yearLines.length - 1;
+      draft.yearLines[last] = `${draft.yearLines[last]}${text}`;
+    };
+    if (fresh.length === 0 && marked) fold(marked, "choice");
     fresh.forEach((entry, index) => {
       const text = marked && index === fresh.length - 1 ? `${entry.text}${marked}` : entry.text;
-      draft.yearLines.push(text);
-      draft.yearKinds.push(entry.kind);
+      fold(text, entry.kind);
     });
     draft.yearOpen = false;
     if (!draft.dead && draft.ending !== "edge") {
@@ -670,7 +687,8 @@ function noteHeart(life: Life): void {
   life.heartByAge[life.yearAge] = Math.round(life.heart);
 }
 
-function closeStoryYear(draft: Life, rng: Rng): Life {
+function closeStoryYear(draft: Life, rng: Rng, before?: { heart: number; stones: number }): Life {
+  if (before) finishYearSlant(draft, before);
   noteHeart(draft);
   bindPending(draft);
   draft.rngState = rng.state();
@@ -681,6 +699,8 @@ function closeStoryYear(draft: Life, rng: Rng): Life {
 export function playStoryYear(life: Life): Life {
   if (!life.story || life.pending || isFinished(life)) return life;
   const draft = clone(life);
+  const before = { heart: Math.round(draft.heart), stones: Math.round(draft.stones) };
+  beginYearSlant(draft);
   const rng = makeRng(draft.rngState);
   for (let i = 0; i < draft.yearLines.length; i += 1) {
     const kind = draft.yearKinds[i] ?? "chapter";
@@ -708,13 +728,13 @@ export function playStoryYear(life: Life): Life {
       markDeath(draft, starved ? "靈石斷供，化神反噬" : "壽元耗盡");
       pushYear(draft, `${age}歲。${draft.cause}。你停在${realmById(draft.realm).name}。`);
     }
-    return closeStoryYear(draft, rng);
+    return closeStoryYear(draft, rng, before);
   }
   const ratio = (age + 1) / Math.max(1, draft.lifespan);
   if (!draft.mortal && draft.revealed && ratio > 0.93 && rng.next() < (ratio - 0.93) * 0.55) {
     markDeath(draft, "壽元將盡");
     pushYear(draft, `${age}歲。壽元將盡。你停在${realmById(draft.realm).name}。`);
-    return closeStoryYear(draft, rng);
+    return closeStoryYear(draft, rng, before);
   }
 
   const testAge = testAgeOf(draft);
@@ -731,7 +751,7 @@ export function playStoryYear(life: Life): Life {
     if (home && draft.yearLines.length < 2) pushYear(draft, home, "home");
     draft.age += 1;
     draft.years += 1;
-    return closeStoryYear(draft, rng);
+    return closeStoryYear(draft, rng, before);
   }
 
   const notes: string[] = [];
@@ -743,7 +763,7 @@ export function playStoryYear(life: Life): Life {
       draft.cause = "化神這一層走到頭了";
       closeSpan(draft, draft.age);
       pushYear(draft, `${age}歲。化神這一層走到頭了，人還在。`);
-      return closeStoryYear(draft, rng);
+      return closeStoryYear(draft, rng, before);
     }
   }
 
@@ -757,7 +777,7 @@ export function playStoryYear(life: Life): Life {
     }
     openLegacy(draft, legacy);
     draft.yearOpen = Boolean(draft.pending);
-    return closeStoryYear(draft, rng);
+    return closeStoryYear(draft, rng, before);
   }
   if (draft.revealed && !draft.mortal && age >= 16 && openGate(draft)) {
     if (two && draft.yearLines.length === 0) {
@@ -766,7 +786,7 @@ export function playStoryYear(life: Life): Life {
       else pushBeat(draft, rng, age);
     }
     draft.yearOpen = true;
-    return closeStoryYear(draft, rng);
+    return closeStoryYear(draft, rng, before);
   }
 
   const lines: { text: string; kind: LogEntry["kind"] }[] = [];
@@ -823,7 +843,28 @@ export function playStoryYear(life: Life): Life {
     draft.age += 1;
     draft.years += 1;
   }
-  return closeStoryYear(draft, rng);
+  return closeStoryYear(draft, rng, before);
+}
+
+export function chooseAim(life: Life, aim: AimId): Life {
+  if (!life.story || isFinished(life)) return life;
+  const draft = clone(life);
+  retargetAim(draft, aim);
+  return draft;
+}
+
+export function payStone(life: Life, id: SpendId): Life {
+  if (!life.story || isFinished(life)) return life;
+  const draft = clone(life);
+  const paid = spendStone(draft, id);
+  return paid ? draft : life;
+}
+
+export function armAutoSpend(life: Life, id: SpendId): Life {
+  if (!life.story || isFinished(life)) return life;
+  const draft = clone(life);
+  toggleAutoSpend(draft, id);
+  return draft;
 }
 
 function threadPending(life: Life, kind: ThreadKind): Pending {
@@ -2557,6 +2598,19 @@ function companionChapters(life: Life): Chapter[] {
   }
   const lastHome = home[home.length - 1];
   if (lastHome) push(lastHome.age, lastHome.text);
+  const house = life.household;
+  if (house) {
+    const work = house.seen.includes("job")
+      ? `${house.jobSince}歲起在${house.jobPlace}${house.job}`
+      : "生計還沒定下來";
+    push(0, `家在${house.region}的${house.hamlet}，屋子是${house.home}。${work}。`);
+  }
+  push(
+    life.age,
+    life.dead
+      ? `${life.age}歲停下來。${life.cause || "日子停在這裡"}。人沒有再回到${house?.home ?? life.region}。`
+      : `${life.age}歲，人還在${house?.home ?? life.region}。`,
+  );
   picked.sort((a, b) => a.age - b.age || a.text.length - b.text.length);
   if (picked.length <= 16) return picked;
   const keep = new Set<string>();

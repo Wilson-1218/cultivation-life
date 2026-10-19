@@ -44,6 +44,7 @@ export type Household = {
   memories: string[];
   agenda: { id: string; age: number }[];
   seen: string[];
+  jobShift: boolean;
 };
 
 export type HomeContext = {
@@ -326,6 +327,7 @@ export function buildHousehold(input: {
     memories: [],
     agenda,
     seen: [],
+    jobShift: false,
   };
   const opening = desired(house, { age: 0, realm: "qi-early", sect: null, mortal: true, escaped: false });
   house.job = opening.job;
@@ -449,6 +451,9 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，${father}，${mother}。你仍在${house.jobPlace}${house.job}。${memoryClause(house, ctx.age)}`;
   }
   if (id === "marry") {
+    if (house.spouse.present) {
+      return `${ctx.age}歲，你和${house.spouse.name}把親事定下來。人已經在${house.home}，${house.hamlet}的屋子還是原來那間。`;
+    }
     house.spouse.present = true;
     house.spouse.born = ctx.age;
     return `${ctx.age}歲，${house.spouse.name}進門。你們在${house.home}成了家，${house.market}的人來坐了一坐。`;
@@ -566,15 +571,107 @@ export function householdBlocks(
   return false;
 }
 
+export function yearMatter(house: Household | null, age: number, region: string): string {
+  if (!house) return `${age}歲這一年，人在${region}。生計還沒寫上。`;
+  const place = `${house.region}的${house.hamlet}`;
+  const work =
+    !house.seen.includes("job") && age < house.jobSince
+      ? `生計還沒定，人在${house.home}`
+      : `白天在${house.jobPlace}${house.job}，晚上回${house.home}`;
+  const kin = spotlight(house);
+  const older = house.memories.filter((item) => !item.startsWith(`${age}歲`));
+  const memory = older.length > 0 ? `心裡還記著${older[older.length - 1]}` : "";
+  return `${age}歲這一年，人在${place}。${work}。${kin}${memory ? `。${memory}` : ""}。`;
+}
+
+function spotlight(house: Household): string {
+  const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
+  const sick = people.find((kin) => kin.present && kin.sick && !kin.dead);
+  if (sick) return `${kinLabel(sick)}病著，人在${house.home}`;
+  const child = house.children.find((kin) => kin.present && !kin.dead && !kin.away);
+  if (child) return `${kinLabel(child)}在家裡`;
+  if (house.spouse.present && !house.spouse.dead && !house.spouse.away) return `${house.spouse.name}在${house.home}`;
+  if (house.mother.present && !house.mother.dead) return `母親${house.mother.name}在${house.home}`;
+  if (house.father.present && !house.father.dead) return `父親${house.father.name}在${house.home}`;
+  return `${house.home}裡這一年沒有別的人`;
+}
+
+export function describeWork(house: Household | null, age: number): string {
+  if (!house) return "生計還沒寫上";
+  if (!house.seen.includes("job") && age < house.jobSince) return `還在${house.hamlet}，事情還沒定`;
+  return `在${house.jobPlace}${house.job}，晚上回${house.home}`;
+}
+
+export function kinDoing(kin: Kin, house: Household, age: number): string {
+  const about = house.memories.filter((item) => item.includes(kin.name));
+  const last = about[about.length - 1] ?? "";
+  if (kin.dead) return about.length > 0 ? "已經不在，家裡還記得" : "已經不在";
+  if (kin.away) return `人在${house.hamlet}外面，一時回不了${house.home}`;
+  if (kin.sick || /病/.test(last)) return `病著，人還在${house.home}`;
+  if (/吵/.test(last) && !/和好/.test(last)) return "剛吵過，話還沒說開";
+  if (/和好/.test(last)) return "架吵過，已經一起吃飯";
+  if (/認字|認過字/.test(last)) return "在認字";
+  if (kin.role === "child") {
+    const years = Math.max(0, age - kin.born);
+    if (years < 6) return `${years}歲，還小，在${house.home}`;
+    return `${years}歲，會自己走到${house.hamlet}口`;
+  }
+  if (kin.role === "sibling" && kin.born > 0) {
+    return `${Math.max(0, age - kin.born)}歲，在${house.home}`;
+  }
+  if (kin.role === "spouse") return `在${house.home}裡`;
+  if (house.seen.includes("job")) return `在${house.hamlet}，你從${house.jobPlace}回來還見得到`;
+  return `在${house.home}裡`;
+}
+
+export function noteYearRipple(house: Household, age: number, who: string): void {
+  const line = `${age}歲碰到${who}`;
+  if (!house.memories.includes(line)) house.memories.push(line);
+}
+
+export function shiftLivelihood(house: Household): string {
+  const previous = `${house.jobPlace}${house.job}`;
+  const calm: HomeContext = { age: 0, realm: "qi-early", sect: null, mortal: true, escaped: true };
+  if (house.jobTier === "cave") {
+    const posts = HIGH_POSTS.filter((item) => item.job !== house.highJob);
+    const next = posts[0] ?? HIGH_POSTS[0]!;
+    house.highJob = next.job;
+    house.highSlot = next.slot;
+    house.job = next.job;
+    house.jobPlace = locate(house, { ...calm, mortal: false, realm: "foundation" }, next.slot);
+  } else if (house.jobTier === "sect") {
+    const posts = SECT_POSTS.filter((item) => item.job !== house.sectJob);
+    const next = posts[0] ?? SECT_POSTS[0]!;
+    house.sectJob = next.job;
+    house.sectSlot = next.slot;
+    house.job = next.job;
+    house.jobPlace = locate(house, { ...calm, mortal: false, sect: "門中" }, next.slot);
+  } else {
+    const posts = ORIGIN_POSTS[house.originId].filter((item) => item.job !== house.originJob);
+    const next = posts[house.memories.length % Math.max(1, posts.length)] ?? ORIGIN_POSTS[house.originId][0]!;
+    house.originJob = next.job;
+    house.originSlot = next.slot;
+    house.job = next.job;
+    house.jobTier = "origin";
+    house.jobPlace = locate(house, calm, next.slot);
+  }
+  if (!house.seen.includes("job")) house.seen.push("job");
+  return `生計從${previous}換成在${house.jobPlace}${house.job}。${house.hamlet}的屋子還在。`;
+}
+
 export function bindHousehold(text: string, house: Household | null | undefined): string {
   if (!house || !text) return text;
   let out = text.replaceAll("爹娘", `父親${house.father.name}、母親${house.mother.name}`);
-  out = out.replace(/(?<![他她])父親/g, `父親${house.father.name}`);
-  out = out.replace(/(?<![他她])母親/g, `母親${house.mother.name}`);
+  const stamp = (role: string, name: string) => {
+    if (!name) return;
+    out = out.replace(new RegExp(`(?<![他她])${role}(?!${name})`, "g"), `${role}${name}`);
+  };
+  stamp("父親", house.father.name);
+  stamp("母親", house.mother.name);
   for (const call of ["弟弟", "妹妹", "哥哥", "姐姐"] as const) {
     const kin = house.siblings.find((item) => item.call === call && item.present && !item.dead && !item.away);
     if (!kin) continue;
-    out = out.replace(new RegExp(`(?<![他她])${call}`, "g"), `${call}${kin.name}`);
+    stamp(call, kin.name);
   }
   out = out.replaceAll("坊市", house.market);
   out = out.replaceAll("村口", `${house.hamlet}口`);
