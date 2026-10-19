@@ -1,7 +1,7 @@
 import type { RealmId } from "@/lib/world";
 
 export type AimId = "cultivate" | "family" | "work" | "friends" | "health";
-export type SpendId = "home" | "pill" | "peer" | "job" | "propose" | "part" | "manual";
+export type SpendId = "home" | "pill" | "peer" | "job" | "propose" | "part" | "manual" | "merit" | "deepen" | "hire";
 
 export type AimOption = {
   id: AimId;
@@ -10,32 +10,32 @@ export type AimOption = {
   down: string;
 };
 
-export function aimOptions(age: number, highRealm: boolean): AimOption[] {
+export function aimOptions(age: number, _highRealm: boolean): AimOption[] {
   const young = age < 12;
   return [
     {
       id: "cultivate",
-      name: young ? "跟著練" : highRealm ? "閉關修煉" : "修煉",
+      name: young ? "跟著練" : "閉關修煉",
       up: "修為↑",
-      down: "家裡或生計↓",
+      down: "看悟性",
     },
     {
       id: "family",
       name: young ? "幫家裡" : "養家",
-      up: "家人↑",
-      down: "修為↓",
+      up: "家裡穩",
+      down: "人脈↑",
     },
     {
       id: "work",
       name: young ? "學著做" : "做事",
-      up: "生計↑",
-      down: "修為少一點",
+      up: "靈石↑",
+      down: "看氣運",
     },
     {
       id: "friends",
       name: young ? "找同輩" : "結交",
-      up: "同輩↑",
-      down: "修為少一點",
+      up: "人脈↑",
+      down: "常有人幫",
     },
     {
       id: "health",
@@ -64,6 +64,8 @@ export function spendOffers(input: {
   spouse: "none" | "here" | "apart";
   learned?: string[];
   manual?: string | null;
+  sect?: string | null;
+  insight?: number;
 }): SpendOffer[] {
   const pillIsLife = input.mortal || QI.has(input.realm);
   const offers: SpendOffer[] = [
@@ -79,9 +81,9 @@ export function spendOffers(input: {
       id: "pill",
       name: pillIsLife ? "買一顆養身的丹" : "買一顆對境的丹",
       detail: pillIsLife ? "身子還在煉氣或凡人的日子裡，這顆丹墊壽元。" : "境界已經上去，這顆丹推修為。",
-      cost: pillIsLife ? 240 : 480,
-      effect: pillIsLife ? "壽元上升" : "修為上升",
-      record: pillIsLife ? "你服了一顆養身的丹，壽元往上墊了一截。" : "你服了一顆對境的丹，修為往上走了一截。",
+      cost: pillIsLife ? 180 : 360,
+      effect: pillIsLife ? "壽元大增" : "修為大增",
+      record: pillIsLife ? "你服了一顆養身的丹，壽元墊上十二年。" : "你服了一顆對境的丹，修為往前走了一大截。",
     },
     {
       id: "peer",
@@ -121,6 +123,32 @@ export function spendOffers(input: {
       record: `你把主修改成${other}。`,
     });
   }
+  if (input.sect) {
+    offers.push({
+      id: "merit",
+      name: "捐貢獻換身份",
+      detail: `把靈石捐進${input.sect}的名冊，換上一檔身份。`,
+      cost: 260,
+      effect: "宗門身份上升",
+      record: "你捐了貢獻，名冊上的身份改了一檔。",
+    });
+  }
+  offers.push({
+    id: "deepen",
+    name: "買一部更深的功法",
+    detail: `悟性${Math.round(input.insight ?? 0)}。夠了才練得進，不夠就學不會。`,
+    cost: 300,
+    effect: "學會更深的一部，或學不會",
+    record: "你去買更深的功法。",
+  });
+  offers.push({
+    id: "hire",
+    name: "請人出手",
+    detail: "先把人脈買熱。下次出事，有人會擋。",
+    cost: 150,
+    effect: "人脈大增，下次有人幫",
+    record: "你請了人。人脈熱起來，下次有人會出手。",
+  });
   if (input.spouse === "here") {
     offers.push({
       id: "part",

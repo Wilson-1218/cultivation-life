@@ -96,6 +96,8 @@ export function LifeView({
     spouse: spouseState,
     learned: life.learned,
     manual: life.manual,
+    sect: life.sect,
+    insight: life.insight,
   });
   const otherManuals = life.learned.filter((name) => name !== life.manual);
   const topAims = aims.filter((item) => item.id !== "health");
@@ -246,7 +248,7 @@ export function LifeView({
             {life.story ? (
               <>
                 <div className="mt-3 flex flex-col gap-2">
-                  <div className="flex flex-wrap gap-2" role="group" aria-label="今年的重心">
+                  <div className="grid grid-cols-2 gap-2 min-[880px]:grid-cols-4" role="group" aria-label="今年的重心">
                     {topAims.map((item) => {
                       const on = life.aim === item.id;
                       return (
@@ -255,7 +257,7 @@ export function LifeView({
                           variant="outline"
                           aria-pressed={on}
                           className={cn(
-                            "h-auto min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal",
+                            "h-auto w-full min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal",
                             on && "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background",
                           )}
                           onClick={() => onAim(item.id)}
@@ -268,13 +270,13 @@ export function LifeView({
                       );
                     })}
                   </div>
-                  <div className="flex flex-wrap gap-2" role="group" aria-label="養身與靈石">
+                  <div className="grid grid-cols-2 gap-2" role="group" aria-label="養身與靈石">
                     {healthAim ? (
                       <Button
                         variant="outline"
                         aria-pressed={life.aim === "health"}
                         className={cn(
-                          "h-auto min-w-0 flex-col items-start border-[#8a5a12] bg-[#f4e4c4] px-3 py-2 text-left whitespace-normal text-[#6b4510] hover:bg-[#ead6ae]",
+                          "h-auto w-full min-w-0 flex-col items-start border-[#8a5a12] bg-[#f4e4c4] px-3 py-2 text-left whitespace-normal text-[#6b4510] hover:bg-[#ead6ae]",
                           life.aim === "health" && "border-[#6b4510] bg-[#6b4510] text-[#f7f1e4] hover:bg-[#6b4510] hover:text-[#f7f1e4]",
                         )}
                         onClick={() => onAim("health")}
@@ -287,7 +289,7 @@ export function LifeView({
                     ) : null}
                     <Button
                       variant="outline"
-                      className="h-auto flex-col items-start px-3 py-2 text-left whitespace-normal"
+                      className="h-auto w-full min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal"
                       onClick={() => {
                         setSpendOpen(true);
                         if (!paused) onPause();

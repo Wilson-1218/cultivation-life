@@ -15,7 +15,8 @@ export type AffairHost = {
   bond: number;
   fortune?: number;
   sect: string | null;
-  sectRank?: "outer" | "watch" | "inner" | "expelled" | null;
+  sectRank?: "outer" | "watch" | "inner" | "steward" | "elder" | "expelled" | null;
+  backed?: boolean;
   manual: string | null;
   learned?: string[];
   owed: boolean;
@@ -78,8 +79,10 @@ export function drawAffairs(
   const picked: Affair[] = [];
   const fortune = life.fortune ?? 50;
   const good = beats.filter((item) => item.shape === "coin" || item.shape === "heart");
-  const preferGood = fortune >= 58 && good.length > 0 && rng.next() < 0.2 + (fortune - 50) / 80;
-  let left = preferGood ? good : beats;
+  const bad = beats.filter((item) => item.shape === "wound" || item.shape === "road");
+  const preferGood = good.length > 0 && ((fortune >= 68 && rng.next() < 0.85) || (fortune >= 48 && rng.next() < 0.5));
+  const preferBad = !preferGood && fortune <= 30 && bad.length > 0 && rng.next() < 0.75;
+  let left = preferGood ? good : preferBad ? bad : beats;
   while (picked.length < need && left.length > 0) {
     const beat = pickExpiring(rng, left);
     picked.push(beat);
@@ -90,7 +93,11 @@ export function drawAffairs(
 
 export function applyBeat(life: AffairHost, rng: Rng, affair: Affair): string {
   const fortune = life.fortune ?? 50;
-  if (affair.shape === "coin") life.stones += 18 + Math.round(rng.next() * 36) + (fortune >= 60 ? 14 : 0);
+  if (affair.shape === "coin") {
+    const bonus = Math.round(fortune * 0.85);
+    life.stones += 18 + Math.round(rng.next() * 28) + (fortune >= 55 ? bonus : 0);
+    if (fortune <= 28) life.stones = Math.max(0, life.stones - 24);
+  }
   if (affair.shape === "heart") life.heart = clamp(life.heart + 6);
   if (affair.shape === "wound") {
     life.heart = clamp(life.heart - 4);
@@ -98,7 +105,8 @@ export function applyBeat(life: AffairHost, rng: Rng, affair: Affair): string {
   }
   life.stones = Math.max(0, Math.round(life.stones));
   const text = bindHousehold(affair.text, life.household);
-  if (affair.shape === "coin" && fortune >= 62) return `${text}你運氣好，這回比旁人多拿了一截。`;
+  if (affair.shape === "coin" && fortune >= 68) return `${text}你運氣好，這回比旁人多拿了一大截。`;
+  if (affair.shape === "coin" && fortune <= 28) return `${text}你運氣差，到手的又被人拿走一截。`;
   return text;
 }
 
@@ -220,7 +228,10 @@ export function resolveAffair(
   if (affair.shape === "road") {
     const fortune = life.fortune ?? 50;
     const dieAt = (which === "b" ? 0.42 : which === "elder" ? 0.12 : 0.08) * (1.2 - fortune / 100);
-    if ((life.bond ?? 0) >= 46 && rng.next() < (life.bond - 30) / 90) {
+    const bond = life.bond ?? 0;
+    const helpChance = life.backed ? 1 : bond < 8 ? 0 : bond >= 70 ? 0.85 : (bond - 8) / 80;
+    if (helpChance > 0 && rng.next() < helpChance) {
+      life.backed = false;
       if (which === "b") life.scarred = true;
       return { line: helpedLine(life, affair), die: false, cause: "", grudge: false };
     }

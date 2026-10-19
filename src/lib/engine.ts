@@ -5,11 +5,15 @@ import { beginYearSlant, finishYearSlant, retargetAim, spendStone, toggleAutoSpe
 import { humanName } from "./names";
 import {
   deepestUnread,
+  heritageManual,
   insightGate,
-  SECT_AFFAIRS,
+  nextSectRank,
   pickSectAffair,
   progressGain,
   progressLine,
+  rankLabel,
+  rareDismiss,
+  SECT_AFFAIRS,
   startingManual,
   type SectAffair,
   type SectRank,
@@ -128,6 +132,8 @@ export type Life = {
   focus: FocusId;
   sect: string | null;
   sectRank: SectRank | null;
+  leftSect: string | null;
+  backed: boolean;
   manual: string | null;
   learned: string[];
   pillReady: boolean;
@@ -290,6 +296,8 @@ export function createLife(
     focus: "cycle",
     sect: null,
     sectRank: null,
+    leftSect: null,
+    backed: false,
     manual: null,
     learned: [],
     pillReady: false,
@@ -348,8 +356,18 @@ export function createLife(
   if (story && !mortal && originId === "cauldron") {
     life.lifespan = Math.min(life.lifespan, 22);
   }
+  if (story && !mortal && originId === "rich") {
+    life.stones += 160;
+    life.bond = clamp(life.bond + 28);
+    life.fortune = Math.round(clamp(life.fortune + 14));
+  }
   if (story && !mortal && originId === "clan") {
-    life.stones += 36;
+    life.stones += 120;
+    life.bond = clamp(life.bond + 26);
+    life.insight = clamp(Math.max(life.insight, 54));
+    life.fortune = Math.round(clamp(life.fortune + 8));
+    life.relative = true;
+    life.manual = heritageManual(setup.seed || 1);
   }
   if (story && !mortal && !life.manual) life.manual = startingManual(setup.seed || 1);
   if (life.manual && !life.learned.includes(life.manual)) life.learned.push(life.manual);
@@ -670,11 +688,14 @@ function dueLegacy(life: Life, age: number): string | null {
   if (!life.mortal && life.revealed && !life.seenEvents.includes("fortune-pill") && age >= 15 && age <= 16) {
     return "fortune-pill";
   }
-  if (!life.mortal && life.revealed && !life.sect && life.sectRank !== "expelled" && !life.seenEvents.includes("sect-exam") && age >= 18 && age <= 19) {
+  if (!life.mortal && life.revealed && !life.sect && !life.seenEvents.includes("sect-exam") && age >= 18 && age <= 19) {
     return "sect-exam";
   }
-  if (!life.mortal && life.revealed && !life.sect && life.sectRank !== "expelled" && !life.seenEvents.includes("sect-take") && age >= 20 && age <= 22) {
+  if (!life.mortal && life.revealed && !life.sect && !life.seenEvents.includes("sect-take") && age >= 20 && age <= 22) {
     return "sect-take";
+  }
+  if (!life.mortal && life.revealed && !life.sect && life.leftSect && age >= 26 && age % 4 === 2) {
+    return "sect-again";
   }
   if (!life.mortal && !life.seenEvents.includes("bond-hand") && age >= 8 && age <= 10) return "bond-hand";
   return null;
@@ -870,7 +891,9 @@ export function playStoryYear(life: Life): Life {
   }
   const room = Math.max(0, cap - lines.length);
   if (room > 0 && !draft.mortal && draft.sect && draft.sectRank && draft.sectRank !== "expelled" && rng.next() < 0.8) {
-    const affair = pickSectAffair(draft.seenEvents, Math.floor(rng.next() * 1000), draft.learned.length, age);
+    const affair =
+      rareDismiss(draft.seenEvents, age, draft.fortune, draft.bond, rng.next()) ??
+      pickSectAffair(draft.seenEvents, Math.floor(rng.next() * 1000), draft.learned.length, age);
     if (affair) {
       draft.seenEvents.push(affair.id);
       if (affair.choices && lines.length < 2) {
@@ -888,6 +911,9 @@ export function playStoryYear(life: Life): Life {
     }
   }
   const left = Math.max(0, cap - lines.length);
+  if (!draft.pending && !draft.mortal && age >= 17 && rng.next() < (draft.fortune >= 70 ? 0.62 : 0.4)) {
+    openStoneOffer(draft);
+  }
   if (left > 0 && !draft.pending) {
     const allowChoice = rng.next() < (age < 12 ? 0.16 : 0.34);
     let drawn = drawAffairs(draft, rng, age, left, allowChoice);
@@ -1390,7 +1416,7 @@ function insightPage(life: Life): string {
 }
 
 function fortunePill(life: Life): string {
-  if (life.fortune >= 55) {
+  if (life.fortune >= 64) {
     const moved = grantProgress(life, 52);
     life.stones += 18;
     return `集上有人散丹。你運氣好，領到一顆。${progressLine("pill", moved)}`;
@@ -1483,9 +1509,13 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
   if (gain === "merit") {
     life.stones += 22;
     life.bond = clamp(life.bond + 3);
-    if (life.sectRank === "watch" && life.insight >= 60 && life.fortune >= 60) {
-      life.sectRank = "inner";
-      return `功交上去，執事改了名冊。你進了${life.sect}的內門，靈石也到了手。`;
+    if (life.insight >= 48 && life.fortune >= 45) {
+      const next = nextSectRank(life.sectRank);
+      if (next && next !== life.sectRank) {
+        const previous = rankLabel(life.sectRank);
+        life.sectRank = next;
+        return `功交上去，執事改了名冊。你從${previous}升到${rankLabel(next)}，靈石也到了手。`;
+      }
     }
     return "你把功交上去，名冊上多了一筆，靈石也到了手。";
   }
@@ -1509,18 +1539,18 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
   }
   if (gain === "trial") {
     const moved = grantProgress(life, life.insight >= 48 ? 48 : 20);
-    if (life.sectRank === "outer" && life.insight >= 55) {
-      life.sectRank = "watch";
-      return `外門比試你撐到最後。執事讓你留下值守。${progressLine("teach", moved)}`;
+    if ((life.sectRank === "outer" || life.sectRank === "watch") && life.insight >= 50) {
+      life.sectRank = "inner";
+      return `外門比試你撐到最後。執事把你寫進內門。${progressLine("teach", moved)}`;
     }
     if (life.insight >= 48) return `外門比試你進了後一輪。${progressLine("teach", moved)}`;
     return `外門比試你進了場。悟性還淺，只看懂了幾招。${progressLine("teach", moved)}`;
   }
   if (gain === "keep") {
     if (which === "b") return "你沒有留下。外門的日子照舊。";
-    life.sectRank = life.sectRank === "inner" ? "inner" : "watch";
+    if (life.sectRank === "outer" || life.sectRank === "watch" || !life.sectRank) life.sectRank = "inner";
     life.stones += 12;
-    return `執事把你留下值守。從今天起，你在${life.sect}做值守。`;
+    return `執事把你留下。從今天起，你在${life.sect}的身份是${rankLabel(life.sectRank)}。`;
   }
   if (gain === "dismiss") {
     if (which === "a" && life.bond >= 50) {
@@ -1529,9 +1559,25 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
       const door = life.sect?.endsWith("外門") ? life.sect : `${life.sect}外門`;
       return `${who}說了情，執事改了口，你還留在${door}。`;
     }
+    life.leftSect = life.sect;
     life.sect = null;
     life.sectRank = "expelled";
-    return "執事把你打發走了。名冊上沒有你，人還在。";
+    return `差事誤了三次，執事把你打發走了。你離開${life.leftSect}，人還在，別的山門以後還收得了你。`;
+  }
+  if (gain === "raise") {
+    const next = nextSectRank(life.sectRank);
+    if (!next) return `名冊上你已經是${rankLabel(life.sectRank)}，沒有再往上的空位。`;
+    const previous = rankLabel(life.sectRank);
+    life.sectRank = next;
+    return `執事改了名冊。你在${life.sect}從${previous}升到${rankLabel(next)}。`;
+  }
+  if (gain === "leave") {
+    if (which === "b") return "你把信退了。人還在這座山門。";
+    const left = life.sect;
+    life.leftSect = left;
+    life.sect = null;
+    life.sectRank = "expelled";
+    return `你離開了${left}。名冊劃掉了，人還在，別的山門以後還收得了你。`;
   }
   if (gain === "switch") {
     const next = life.learned.find((name) => name !== life.manual);
@@ -1784,6 +1830,31 @@ type LifeEvent = {
   resolve: (life: Life, rng: Rng, choiceId: string) => void;
 };
 
+function otherSect(life: Life, salt = 0): string {
+  const pool = SECTS.filter((name) => name !== life.sect && name !== life.leftSect);
+  const list = pool.length > 0 ? pool : [...SECTS];
+  return list[Math.abs(mixSeed(life.setup.seed || 1, salt + life.age + 11)) % list.length]!;
+}
+
+function openStoneOffer(life: Life): void {
+  const ids = ["stone-pill", "stone-hand", "stone-manual"];
+  if (life.sect && life.sectRank && life.sectRank !== "expelled") ids.push("stone-merit");
+  const id = ids[(life.age + Math.round(life.fortune)) % ids.length]!;
+  const event = EVENTS.find((item) => item.id === id);
+  if (!event) return;
+  life.pending = event.make(life);
+  life.yearOpen = true;
+}
+
+const STONE_PILL = 180;
+const STONE_MERIT = 260;
+const STONE_MANUAL = 300;
+const STONE_HAND = 150;
+
+function shortfall(life: Life, cost: number): string {
+  return `還差 ${formatCount(cost - Math.round(life.stones))} 塊`;
+}
+
 const EVENTS: LifeEvent[] = [
   {
     id: "pill-shop",
@@ -1841,16 +1912,21 @@ const EVENTS: LifeEvent[] = [
       let chance = ROOTS[life.root].exam * (0.68 + life.insight / 145);
       chance *= WORLDS[life.setup.world].gate;
       if (life.relative) chance += 0.12;
-      chance = clamp(chance, 0.03, 0.88);
-      chance *= 0.75 + life.fortune / 160;
+      if (life.originId === "clan") chance += 0.36;
+      else if (life.originId === "rich") chance += 0.22;
+      if (life.fortune < 26 && life.originId !== "clan") chance *= 0.1;
+      else if (life.fortune >= 70) chance *= 1.7;
+      else chance *= 0.4 + life.fortune / 140;
+      chance = clamp(chance, 0.02, 0.92);
       const roll = rng.next();
-      const helped = roll >= chance && life.bond >= 58;
+      const helped = roll >= chance && life.bond >= 62;
       if (roll < chance || helped) {
-        joinSect(life, sect, helped);
+        joinSect(life, sect === life.leftSect ? otherSect(life, 3) : sect, helped);
         return;
       }
       life.heart = clamp(life.heart - 4);
-      pushLog(life, "choice", `榜上沒有你。${sect}的名額滿了。你回到原來的地方。`);
+      const missed = life.fortune < 26 ? `氣運不夠，${sect}沒有收留你。` : `榜上沒有你。${sect}的名額滿了。你回到原來的地方。`;
+      pushLog(life, "choice", missed);
     },
   },
   {
@@ -1876,7 +1952,188 @@ const EVENTS: LifeEvent[] = [
         pushLog(life, "choice", "你沒有去。名冊上沒有你，人還在原來的地方。");
         return;
       }
-      joinSect(life, pickStable(life, SECTS), false);
+      const sect = otherSect(life, 4);
+      if (life.fortune < 22 && life.originId !== "clan" && life.originId !== "rich") {
+        pushLog(life, "choice", `你去了${sect}。氣運不夠，他們沒有收留，名冊上沒有你。`);
+        return;
+      }
+      joinSect(life, sect, false);
+    },
+  },
+  {
+    id: "sect-again",
+    story: true,
+    when: () => false,
+    make: (life) => {
+      const sect = otherSect(life, 9);
+      return {
+        type: "choice",
+        id: "sect-again",
+        title: "別的山門招人",
+        body: `你離開了${life.leftSect ?? "上一座山門"}。${sect}在招人，名冊還空著一格。`,
+        choices: [
+          { id: "sect-again:go", label: "再去應考", hint: "錄上了，右邊的宗門就換。" },
+          { id: "sect-again:steady", label: "先不去", hint: "人還在外面。" },
+        ],
+      };
+    },
+    resolve: (life, rng, choiceId) => {
+      if (!choiceId.endsWith(":go")) {
+        pushLog(life, "choice", "你沒有去。人還在外面，這座山門與你無關。");
+        return;
+      }
+      const sect = otherSect(life, 9);
+      let chance = 0.35 + life.insight / 200 + (life.originId === "clan" ? 0.3 : life.originId === "rich" ? 0.16 : 0);
+      if (life.fortune < 26 && life.originId !== "clan") chance *= 0.12;
+      else if (life.fortune >= 70) chance *= 1.5;
+      if (rng.next() < clamp(chance, 0.05, 0.9) || life.bond >= 70) {
+        joinSect(life, sect, life.bond >= 70);
+        return;
+      }
+      pushLog(life, "choice", life.fortune < 26 ? `氣運不夠，${sect}沒有收留你。` : `${sect}的名額滿了。你還在外面。`);
+    },
+  },
+  {
+    id: "stone-pill",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "stone-pill",
+      title: "買丹進修為",
+      body:
+        life.stones >= STONE_PILL
+          ? `有人賣一顆直接推修為的丹，要 ${formatCount(STONE_PILL)} 塊。你口袋裡有 ${formatCount(life.stones)} 塊。`
+          : `有人賣一顆直接推修為的丹，要 ${formatCount(STONE_PILL)} 塊。你只有 ${formatCount(life.stones)} 塊，${shortfall(life, STONE_PILL)}。`,
+      choices: [
+        { id: "stone-pill:buy", label: "買下", hint: life.stones >= STONE_PILL ? "修為會明顯往前。" : `${shortfall(life, STONE_PILL)}，買不成。` },
+        { id: "stone-pill:steady", label: "不買", hint: "靈石留下，修為不動。" },
+      ],
+    }),
+    resolve: (life, _rng, choiceId) => {
+      if (!choiceId.endsWith(":buy")) {
+        pushLog(life, "choice", "你沒有買那顆丹。修為沒有因它動。");
+        return;
+      }
+      if (life.stones < STONE_PILL) {
+        pushLog(life, "choice", `丹要 ${formatCount(STONE_PILL)} 塊。你${shortfall(life, STONE_PILL)}，丹沒有買成，修為沒有動。`);
+        return;
+      }
+      life.stones -= STONE_PILL;
+      const moved = grantProgress(life, 90);
+      pushLog(life, "choice", `你花了 ${formatCount(STONE_PILL)} 塊買丹，服下。${progressLine("pill", moved)}`);
+    },
+  },
+  {
+    id: "stone-merit",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "stone-merit",
+      title: "捐貢獻換身份",
+      body:
+        life.stones >= STONE_MERIT
+          ? `${life.sect}的名冊可以捐。${formatCount(STONE_MERIT)} 塊，換上一檔身份。`
+          : `${life.sect}的名冊可以捐，要 ${formatCount(STONE_MERIT)} 塊。你${shortfall(life, STONE_MERIT)}。`,
+      choices: [
+        { id: "stone-merit:buy", label: "捐下去", hint: life.stones >= STONE_MERIT ? "右邊的身份會改。" : `${shortfall(life, STONE_MERIT)}，捐不成。` },
+        { id: "stone-merit:steady", label: "不捐", hint: "身份不動。" },
+      ],
+    }),
+    resolve: (life, _rng, choiceId) => {
+      if (!choiceId.endsWith(":buy")) {
+        pushLog(life, "choice", "你沒有捐。名冊還是原來的身份。");
+        return;
+      }
+      if (!life.sect) {
+        pushLog(life, "choice", "你不在宗門裡，這筆貢獻沒有地方寫。");
+        return;
+      }
+      if (life.stones < STONE_MERIT) {
+        pushLog(life, "choice", `捐身份要 ${formatCount(STONE_MERIT)} 塊。你${shortfall(life, STONE_MERIT)}，名冊沒有改。`);
+        return;
+      }
+      const next = nextSectRank(life.sectRank);
+      if (!next) {
+        pushLog(life, "choice", `你已經是${rankLabel(life.sectRank)}，沒有再往上的空位。靈石沒有花。`);
+        return;
+      }
+      life.stones -= STONE_MERIT;
+      const previous = rankLabel(life.sectRank);
+      life.sectRank = next;
+      pushLog(life, "choice", `你花了 ${formatCount(STONE_MERIT)} 塊捐進${life.sect}。身份從${previous}改成${rankLabel(next)}。`);
+    },
+  },
+  {
+    id: "stone-manual",
+    story: true,
+    when: () => false,
+    make: (life) => {
+      const offered = deepestUnread(life.insight, life.learned, (life.setup.seed || 1) + life.age);
+      return {
+        type: "choice",
+        id: "stone-manual",
+        title: "買一部更深的功法",
+        body: `有人賣《${offered}》，要 ${formatCount(STONE_MANUAL)} 塊。悟性要到 ${insightGate(offered)}。你現在悟性 ${Math.round(life.insight)}，靈石 ${formatCount(life.stones)} 塊。`,
+        choices: [
+          { id: "stone-manual:buy", label: "買下", hint: "悟性夠才練得進。" },
+          { id: "stone-manual:steady", label: "不買", hint: "主修不動。" },
+        ],
+      };
+    },
+    resolve: (life, _rng, choiceId) => {
+      const offered = deepestUnread(life.insight, life.learned, (life.setup.seed || 1) + life.age);
+      const current = life.manual ?? "原來那一部";
+      if (!choiceId.endsWith(":buy")) {
+        pushLog(life, "choice", `你沒有買《${offered}》。主修仍是${current}。`);
+        return;
+      }
+      if (life.insight < insightGate(offered)) {
+        pushLog(life, "choice", `你把《${offered}》拿在手裡。悟性還不到，一句也練不進去。靈石沒有花，主修仍是${current}。`);
+        return;
+      }
+      if (life.stones < STONE_MANUAL) {
+        pushLog(life, "choice", `《${offered}》要 ${formatCount(STONE_MANUAL)} 塊。你${shortfall(life, STONE_MANUAL)}，功法沒有買成。`);
+        return;
+      }
+      life.stones -= STONE_MANUAL;
+      rememberManual(life, offered);
+      life.manual = offered;
+      const moved = grantProgress(life, 70);
+      pushLog(life, "choice", `你花了 ${formatCount(STONE_MANUAL)} 塊，把主修改成${offered}。${progressLine("page", moved)}`);
+    },
+  },
+  {
+    id: "stone-hand",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "stone-hand",
+      title: "請人出手",
+      body:
+        life.stones >= STONE_HAND
+          ? `有人肯替你擋事，要 ${formatCount(STONE_HAND)} 塊。人脈會熱起來。`
+          : `有人肯替你擋事，要 ${formatCount(STONE_HAND)} 塊。你${shortfall(life, STONE_HAND)}。`,
+      choices: [
+        { id: "stone-hand:buy", label: "請他", hint: life.stones >= STONE_HAND ? "人脈上升，下次有人幫。" : `${shortfall(life, STONE_HAND)}，請不成。` },
+        { id: "stone-hand:steady", label: "不請", hint: "人脈維持原樣。" },
+      ],
+    }),
+    resolve: (life, _rng, choiceId) => {
+      if (!choiceId.endsWith(":buy")) {
+        pushLog(life, "choice", "你沒有請人。這次沒有人替你擋。");
+        return;
+      }
+      if (life.stones < STONE_HAND) {
+        pushLog(life, "choice", `請人要 ${formatCount(STONE_HAND)} 塊。你${shortfall(life, STONE_HAND)}，人沒有請成。`);
+        return;
+      }
+      life.stones -= STONE_HAND;
+      life.bond = clamp(life.bond + 24);
+      life.backed = true;
+      pushLog(life, "choice", `你花了 ${formatCount(STONE_HAND)} 塊請人。人脈熱起來，下次出事有人會擋。`);
     },
   },
   {
@@ -2789,7 +3046,7 @@ export function burialOf(life: Life): { region: string; item: string; by: string
 function rollOriginId(seed: number): OriginId {
   const roll = mixSeed(seed, 0x51) / 4294967296;
   let cursor = 0;
-  for (const id of ["village", "orphan", "clan", "cauldron", "remnant"] as const) {
+  for (const id of ["village", "orphan", "rich", "clan", "cauldron", "remnant"] as const) {
     cursor += ORIGINS[id].share;
     if (roll < cursor) return id;
   }

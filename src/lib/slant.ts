@@ -1,6 +1,8 @@
 import { spendOffers, type AimId, type SpendId } from "@/lib/aims";
 import { noteYearRipple, shiftLivelihood, type Household } from "@/lib/household";
-import { TUNING, type FocusId, type RealmId } from "@/lib/world";
+import { deepestUnread, insightGate, nextSectRank, rankLabel } from "@/lib/persona";
+import type { SectRank } from "@/lib/persona";
+import { TUNING, type FocusId, type RealmId, type RootId } from "@/lib/world";
 
 type Kind = "chapter" | "choice" | "pause" | "system" | "home";
 
@@ -25,16 +27,13 @@ export type SlantLife = {
   realm: RealmId;
   household: Household | null;
   sect: string | null;
+  sectRank?: SectRank | null;
   learned?: string[];
   manual?: string | null;
-};
-
-const AIM_SHIFT: Record<AimId, { progress: number; bond: number; heart: number; life: number }> = {
-  cultivate: { progress: 1, bond: -2, heart: -1, life: 0 },
-  family: { progress: -2, bond: 4, heart: 1, life: 0 },
-  work: { progress: -1, bond: 0, heart: -2, life: 0 },
-  friends: { progress: -1, bond: 3, heart: 2, life: 0 },
-  health: { progress: -1, bond: 0, heart: 2, life: 1 },
+  insight?: number;
+  fortune?: number;
+  backed?: boolean;
+  root?: RootId;
 };
 
 function clamp(value: number, max = 100): number {
@@ -52,11 +51,36 @@ function pushLine(life: SlantLife, text: string) {
 }
 
 function applyShift(life: SlantLife, aim: AimId, sign: 1 | -1) {
-  const shift = AIM_SHIFT[aim];
-  life.progress = clamp(life.progress + sign * shift.progress, TUNING.progressCap);
-  life.bond = clamp(life.bond + sign * shift.bond);
-  life.heart = clamp(life.heart + sign * shift.heart);
-  if (shift.life) life.lifespan = Math.max(life.age + 1, life.lifespan + sign * shift.life);
+  const insight = life.insight ?? 30;
+  const fortune = life.fortune ?? 40;
+  if (aim === "cultivate") {
+    const rootScale = life.root === "wei" ? 0.5 : life.root === "zhen" ? 0.8 : 1;
+    const gain = Math.max(6, Math.round((10 + insight * 0.45) * rootScale));
+    life.progress = clamp(life.progress + sign * gain, TUNING.progressCap);
+    life.bond = clamp(life.bond - sign * 1);
+    return;
+  }
+  if (aim === "friends") {
+    life.bond = clamp(life.bond + sign * 14);
+    return;
+  }
+  if (aim === "family") {
+    life.bond = clamp(life.bond + sign * 6);
+    const house = life.household;
+    if (house && sign === 1) {
+      house.steady = (house.steady ?? 0) + 1;
+      for (const kin of [house.father, house.mother, ...house.siblings, house.spouse, ...house.children]) {
+        if (kin.sick) kin.sick = false;
+      }
+    }
+    return;
+  }
+  if (aim === "work") {
+    const pay = 22 + Math.round(fortune * 0.85);
+    life.stones = Math.max(0, life.stones + sign * pay);
+    return;
+  }
+  if (aim === "health") return;
 }
 
 export function applyAimTune(life: SlantLife) {
@@ -100,6 +124,8 @@ export function offerFor(life: SlantLife, id: SpendId) {
     spouse: spouseState(life.household),
     learned: life.learned,
     manual: life.manual,
+    sect: life.sect,
+    insight: life.insight,
   }).find((item) => item.id === id);
 }
 
@@ -109,8 +135,26 @@ function applySpendEffect(life: SlantLife, id: SpendId) {
     life.bond = clamp(life.bond + 6);
     if (house) noteYearRipple(house, life.yearAge, "留過靈石在屋裡");
   } else if (id === "pill") {
-    if (life.mortal || life.realm.startsWith("qi-")) life.lifespan += 3;
-    else life.progress = clamp(life.progress + 6, TUNING.progressCap);
+    if (life.mortal || life.realm.startsWith("qi-")) life.lifespan += 12;
+    else life.progress = clamp(life.progress + 48, TUNING.progressCap);
+  } else if (id === "merit" && life.sect) {
+    const next = nextSectRank(life.sectRank ?? "outer");
+    if (next) life.sectRank = next;
+  } else if (id === "deepen") {
+    const learned = life.learned ?? [];
+    const offered = deepestUnread(life.insight ?? 0, learned, life.yearAge + 3);
+    if ((life.insight ?? 0) < insightGate(offered)) {
+      life.stones += 300;
+      life.jobNote = `你把《${offered}》拿在手裡。悟性還不到，一句也練不進去，靈石退了回來。主修仍是${life.manual ?? "原來那一部"}。`;
+    } else {
+      if (!life.learned) life.learned = [];
+      if (!life.learned.includes(offered)) life.learned.push(offered);
+      life.manual = offered;
+      life.progress = clamp(life.progress + 36, TUNING.progressCap);
+    }
+  } else if (id === "hire") {
+    life.bond = clamp(life.bond + 22);
+    life.backed = true;
   } else if (id === "peer") {
     life.heart = clamp(life.heart + 5);
     life.bond = clamp(life.bond + 2);
@@ -152,9 +196,16 @@ function spendSentence(life: SlantLife, id: SpendId, cost: number, again: boolea
   }
   if (id === "pill") {
     const body = life.mortal || life.realm.startsWith("qi-");
-    if (body) return `你在${hamlet}買了一顆養身的丹，回到${home}服下，人緩過來一點。`;
-    return `你買了一顆對這境的丹，服完，吐納順了一些。`;
+    if (body) return `你花了${cost}塊靈石買養身的丹，服下，壽元墊上十二年。`;
+    return `你花了${cost}塊靈石買對境的丹，服下，修為往前走了一大截。`;
   }
+  if (id === "merit") return `你花了${cost}塊靈石捐進${life.sect ?? "宗門"}。名冊改過，身份是${rankLabel(life.sectRank ?? "outer")}。`;
+  if (id === "deepen") {
+    const note = life.jobNote;
+    life.jobNote = "";
+    return note || `你花了${cost}塊靈石，把主修改成${life.manual ?? "另一部"}。修為也跟著進了一截。`;
+  }
+  if (id === "hire") return `你花了${cost}塊靈石請人。人脈熱起來，下次出事有人會擋。`;
   if (id === "peer") {
     if (turn === 1) return `同歲的人來找你。你在${hamlet}請他們坐了一坐，話比功法多。`;
     return `你請同歲的人在${house?.market ?? hamlet}坐到天黑，花了${cost}塊靈石。`;
@@ -172,6 +223,7 @@ function stopSentence(life: SlantLife, id: SpendId): string {
   if (id === "home") return `你本想再留一筆給${who}，摸了摸口袋，靈石不夠，今年做不成。`;
   if (id === "peer") return `你本想再請同輩坐坐，靈石不夠，人就自己回了${house?.home ?? "屋裡"}。`;
   if (id === "pill") return `你在鋪子前站了一會，靈石不夠買那顆丹，空手回了${house?.home ?? "屋裡"}。`;
+  if (id === "merit" || id === "deepen" || id === "hire") return `你想花這一筆，口袋不夠，事情錯過了。`;
   if (id === "job") return `你想換一份活，靈石不夠打點，這事先放下。`;
   if (id === "propose") return `你想提親，靈石不夠，這門親事今年提不成。`;
   return `你想辦的那件事，靈石不夠，今年就停了。`;
@@ -218,4 +270,44 @@ export function finishYearSlant(life: SlantLife, _before: { heart: number; stone
     }
   }
   applyAimTune(life);
+  sayAim(life);
+}
+
+const HEALTH_COST = 48;
+
+function say(life: SlantLife, text: string) {
+  if (!text || life.yearLines.length >= 2) return;
+  life.yearLines.push(text);
+  life.yearKinds.push("chapter");
+}
+
+function sayAim(life: SlantLife) {
+  const insight = Math.round(life.insight ?? 0);
+  const fortune = Math.round(life.fortune ?? 0);
+  if (life.aim === "health") {
+    if (life.stones >= HEALTH_COST) {
+      life.stones -= HEALTH_COST;
+      life.lifespan += 8;
+      say(life, `你花了${HEALTH_COST}塊靈石養身，壽元墊上了八年。`);
+    } else {
+      const short = HEALTH_COST - Math.round(life.stones);
+      say(life, `你想養身，還差${short}塊靈石，壽元沒有動。`);
+    }
+    return;
+  }
+  if (life.aim === "cultivate") {
+    say(life, insight >= 55 ? "你把這一年關在吐納上。悟性夠，修為進得比旁人狠。" : "你把這一年關在吐納上。悟性淺，修為只挪了一點。");
+    return;
+  }
+  if (life.aim === "work") {
+    say(life, fortune >= 62 ? "這一年靠做事換靈石。氣運好，同一份活比旁人多拿了一大截。" : "這一年靠做事換靈石。氣運平平，到手的不多。");
+    return;
+  }
+  if (life.aim === "friends") {
+    say(life, "你把日子花在人上，人脈熱了起來。");
+    return;
+  }
+  if (life.aim === "family") {
+    say(life, "你守在家裡。病沒有再加重，人脈也暖了一點。");
+  }
 }

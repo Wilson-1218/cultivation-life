@@ -18,7 +18,7 @@ export type RealmId =
   | "spirit";
 export type GateId = "foundation" | "core" | "nascent" | "spirit";
 
-export type OriginId = "village" | "orphan" | "clan" | "cauldron" | "remnant";
+export type OriginId = "village" | "orphan" | "rich" | "clan" | "cauldron" | "remnant";
 export type KarmaGift = "root" | "origin" | "ease" | "stones" | "span";
 export type KarmaBoost = "root" | "origin";
 
@@ -253,31 +253,37 @@ export const ORIGINS: Record<
   village: {
     id: "village",
     name: "鄉野人家",
-    share: 0.46,
+    share: 0.22,
     flavor: "沒有功法，也沒有人專門來找你。日子靠自己一年一年過。",
   },
   orphan: {
     id: "orphan",
     name: "散修遺孤",
-    share: 0.28,
+    share: 0.12,
     flavor: "留下的東西不多，記仇的人倒還在。爭的時候更容易見血。",
+  },
+  rich: {
+    id: "rich",
+    name: "有錢人家",
+    share: 0.3,
+    flavor: "家裡有鋪面和靈石。起步比鄰家寬，人脈也熱，入門時有人肯說話。",
   },
   clan: {
     id: "clan",
-    name: "修仙家族旁系",
-    share: 0.16,
-    flavor: "族裡有一點靈石和殘頁。出事時叫得動長輩，族裡也會來收。",
+    name: "修仙世家",
+    share: 0.26,
+    flavor: "家傳一部功法，靈石和名帖都有。入宗門時有人認得你。",
   },
   cauldron: {
     id: "cauldron",
     name: "藥人殘身",
-    share: 0.07,
+    share: 0.06,
     flavor: "身體是別人養的。不跑出去，壽元只記到二十二歲。",
   },
   remnant: {
     id: "remnant",
     name: "轉世殘憶",
-    share: 0.03,
+    share: 0.04,
     flavor: "有一段不屬於這一生的路。走得快，也容易把經脈走裂。",
   },
 };
@@ -364,7 +370,32 @@ export const REGIONS = [
   "墨池縣",
 ] as const;
 
-export const SECTS = ["青汀門", "白石谷", "鹽市外門", "霜嶺小派", "東澤學堂"] as const;
+export const SECTS = [
+  "青汀門",
+  "白石谷",
+  "霜嶺派",
+  "東澤學堂",
+  "落霞宗",
+  "聽雨觀",
+  "鐵爐山",
+  "藥王谷",
+  "歸雲門",
+  "北溟閣",
+  "松風觀",
+  "槐巷宗",
+  "慢水派",
+  "石龍觀",
+  "雲棲門",
+  "寒鴉谷",
+  "斷碑宗",
+  "清苔閣",
+  "楓嶺派",
+  "烏柏觀",
+  "半山宗",
+  "茶嶺門",
+  "長橋觀",
+  "蘆溝派",
+] as const;
 
 export const MANUALS = ["薄霧吐納", "井華訣", "枯榮殘頁", "慢火訣"] as const;
 

@@ -47,6 +47,7 @@ export type Household = {
   agenda: { id: string; age: number }[];
   seen: string[];
   jobShift: boolean;
+  steady?: number;
 };
 
 export type HomeContext = {
@@ -94,6 +95,12 @@ const ORIGIN_POSTS: Record<OriginId, { job: string; slot: PlaceSlot }[]> = {
     { job: "當腳夫", slot: "road" },
     { job: "守茶攤", slot: "market" },
     { job: "打鐵", slot: "market" },
+  ],
+  rich: [
+    { job: "管鋪", slot: "market" },
+    { job: "收租", slot: "yard" },
+    { job: "管帳", slot: "yard" },
+    { job: "做東", slot: "market" },
   ],
   clan: [
     { job: "管帳", slot: "yard" },
@@ -536,6 +543,11 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
       who.sick = true;
       remember(house, `${who.call}${who.name}病過`);
       return `${ctx.age}歲，${who.call}${who.name}病了。你趕回家，人還認得出你。`;
+    }
+    if ((house.steady ?? 0) > 0) {
+      house.steady = (house.steady ?? 1) - 1;
+      who.sick = false;
+      return `${ctx.age}歲，${who.call}${who.name}病得重。家裡人輪著守，人撐過來了。`;
     }
     who.dead = true;
     who.sick = false;

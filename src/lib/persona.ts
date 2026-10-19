@@ -1,13 +1,68 @@
 import type { RootId } from "./world";
 
-export type SectRank = "outer" | "watch" | "inner" | "expelled";
+export type SectRank = "outer" | "watch" | "inner" | "steward" | "elder" | "expelled";
 
-export const SHALLOW_MANUALS = ["青禾吐納", "厚土納氣", "溪行十二息"] as const;
-export const MID_MANUALS = ["松風歸元篇", "白石煉氣訣", "慢水養氣篇"] as const;
-export const DEEP_MANUALS = ["寒鴉觀想法", "斷碑心法", "雲棲真解"] as const;
+export const SHALLOW_MANUALS = [
+  "青禾吐納訣",
+  "厚土納氣功",
+  "晨露養元篇",
+  "井華吐納訣",
+  "畦間養氣篇",
+  "村燈守一訣",
+  "薄霧引氣篇",
+  "石階吐納功",
+  "朝露歸元訣",
+  "野火溫養篇",
+] as const;
+export const MID_MANUALS = [
+  "松風歸元篇",
+  "白石煉氣訣",
+  "玄水養氣經",
+  "赤霞煉氣篇",
+  "庚金鍛氣訣",
+  "離火煉氣經",
+  "坎水歸元篇",
+  "巽風吐納經",
+  "鎮岳煉氣功",
+  "流雲養元訣",
+] as const;
+export const DEEP_MANUALS = [
+  "寒鴉觀想法",
+  "斷碑心經",
+  "雲棲真解篇",
+  "紫府問心經",
+  "太虛納元功",
+  "九轉歸真訣",
+  "玄冥觀想篇",
+  "天星照魄經",
+  "龍脈鎮元功",
+  "無相心法篇",
+] as const;
 
 export function startingManual(seed: number): string {
   return SHALLOW_MANUALS[Math.abs(seed) % SHALLOW_MANUALS.length]!;
+}
+
+export function heritageManual(seed: number): string {
+  return MID_MANUALS[Math.abs(seed) % MID_MANUALS.length]!;
+}
+
+export function rankLabel(rank: SectRank | null): string {
+  if (rank === "inner") return "內門";
+  if (rank === "steward") return "管事";
+  if (rank === "elder") return "長老候選";
+  if (rank === "watch") return "值守";
+  if (rank === "expelled") return "已經離開";
+  return "外門";
+}
+
+const RANK_LADDER: SectRank[] = ["outer", "inner", "steward", "elder"];
+
+export function nextSectRank(rank: SectRank | null): SectRank | null {
+  const current = rank === "watch" ? "outer" : rank;
+  const index = RANK_LADDER.indexOf(current ?? "outer");
+  if (index < 0 || index >= RANK_LADDER.length - 1) return null;
+  return RANK_LADDER[index + 1] ?? null;
 }
 
 export function insightGate(name: string): number {
@@ -35,10 +90,13 @@ export function progressLine(_kind: string, moved: { crossed: boolean; realmName
   return `修為往前走了一截，人還在${moved.realmName}。`;
 }
 
-export function sectStanding(life: { sect: string | null; sectRank: SectRank | null }): string {
-  if (life.sectRank === "expelled") return "已經被打發走";
-  if (!life.sect || !life.sectRank) return "尚未入門";
-  const role = life.sectRank === "inner" ? "內門" : life.sectRank === "watch" ? "值守" : "外門";
+export function sectStanding(life: { sect: string | null; sectRank: SectRank | null; leftSect?: string | null }): string {
+  if (!life.sect || !life.sectRank || life.sectRank === "expelled") {
+    if (life.leftSect) return `離開了${life.leftSect}`;
+    if (life.sectRank === "expelled") return "已經被打發走";
+    return "尚未入門";
+  }
+  const role = rankLabel(life.sectRank);
   if (life.sect.endsWith(role)) return `${life.sect} · 弟子`;
   return `${life.sect} · ${role}`;
 }
@@ -58,7 +116,9 @@ export type SectGain =
   | "teach"
   | "pill"
   | "page"
-  | "switch";
+  | "switch"
+  | "raise"
+  | "leave";
 
 export type SectAffair = {
   id: string;
@@ -140,7 +200,7 @@ export const SECT_AFFAIRS: SectAffair[] = [
   {
     id: "sect-dismiss",
     title: "被打發",
-    text: "執事要把你的名字從名冊上劃掉，說外門用不上你。",
+    text: "你連續誤了三次差事，貢獻又墊在名冊最末。執事要把你的名字劃掉。",
     gain: "dismiss",
     choices: [
       { id: "sect-dismiss:a", label: "請人說情", hint: "人脈夠的話，也許留得下。" },
@@ -152,6 +212,34 @@ export const SECT_AFFAIRS: SectAffair[] = [
     title: "師兄傳功",
     text: "師兄把一部更深的功法攤開，問你看不看得懂。",
     gain: "teach",
+  },
+  {
+    id: "sect-teach-hall",
+    title: "講經傳功",
+    text: "大殿裡有人講一部功法，點名讓外門的人跟上。",
+    gain: "teach",
+  },
+  {
+    id: "sect-teach-night",
+    title: "夜裡傳功",
+    text: "值夜的師兄把口訣低聲說給你聽，只說這一遍。",
+    gain: "teach",
+  },
+  {
+    id: "sect-raise",
+    title: "名冊要改",
+    text: "執事把名冊攤開，說你的差事夠了，上一檔有個空位。",
+    gain: "raise",
+  },
+  {
+    id: "sect-leave",
+    title: "別的山門來請",
+    text: "另一座山門捎信來，說你的差事他們用得上。走了，這裡的名冊就劃掉。",
+    gain: "leave",
+    choices: [
+      { id: "sect-leave:a", label: "離開", hint: "名冊劃掉。以後還能去別的門。" },
+      { id: "sect-leave:b", label: "留下", hint: "信退回去。" },
+    ],
   },
   {
     id: "sect-pill",
@@ -178,9 +266,20 @@ export const SECT_AFFAIRS: SectAffair[] = [
 ];
 
 export function pickSectAffair(seen: readonly string[], salt: number, learnedCount: number, age = 0): SectAffair | null {
-  let fresh = SECT_AFFAIRS.filter((item) => !seen.includes(item.id));
+  let fresh = SECT_AFFAIRS.filter((item) => !seen.includes(item.id) && item.gain !== "dismiss");
   if (learnedCount < 2) fresh = fresh.filter((item) => item.gain !== "switch");
-  if (age < 40) fresh = fresh.filter((item) => item.gain !== "dismiss");
+  if (age < 26) fresh = fresh.filter((item) => item.gain !== "leave");
   if (fresh.length === 0) return null;
+  const teach = fresh.filter((item) => item.gain === "teach" || item.gain === "lecture" || item.gain === "pill");
+  const raise = fresh.find((item) => item.gain === "raise");
+  const leave = fresh.find((item) => item.gain === "leave");
+  if (leave && age >= 28 && salt % 2 === 0) return leave;
+  if (raise && age >= 22 && salt % 3 !== 1) return raise;
+  if (teach.length > 0 && salt % 2 === 1) return teach[salt % teach.length]!;
   return fresh[Math.abs(salt) % fresh.length]!;
+}
+
+export function rareDismiss(seen: readonly string[], age: number, fortune: number, bond: number, roll: number): SectAffair | null {
+  if (seen.includes("sect-dismiss") || age < 52 || fortune >= 38 || bond >= 22 || roll > 0.08) return null;
+  return SECT_AFFAIRS.find((item) => item.id === "sect-dismiss") ?? null;
 }
