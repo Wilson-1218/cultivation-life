@@ -217,7 +217,7 @@ export function LifeView({
             <p className="mt-2 text-sm text-muted-foreground">{placeLine}</p>
             {life.story ? (
               <>
-                <h2 className="mt-2 text-xl font-semibold leading-8">{yearMatter(house, age, life.region)}</h2>
+                <h2 className="mt-2 text-xl font-semibold leading-8">{yearMatter(house, age, life.region, life.aim)}</h2>
                 <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="今年的重心">
                   {aims.map((item) => {
                     const on = life.aim === item.id;

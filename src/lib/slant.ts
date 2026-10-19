@@ -1,5 +1,5 @@
-import { aimClause, spendOffers, type AimId, type SpendId } from "@/lib/aims";
-import { noteYearRipple, shiftLivelihood, type Household, type Kin } from "@/lib/household";
+import { spendOffers, type AimId, type SpendId } from "@/lib/aims";
+import { noteYearRipple, shiftLivelihood, type Household } from "@/lib/household";
 import { TUNING, type FocusId, type RealmId } from "@/lib/world";
 
 type Kind = "chapter" | "choice" | "pause" | "system" | "home";
@@ -39,37 +39,6 @@ function clamp(value: number, max = 100): number {
   return Math.max(0, Math.min(max, value));
 }
 
-function livingPeople(house: Household): Kin[] {
-  return [house.father, house.mother, ...house.siblings, house.spouse, ...house.children].filter(
-    (kin) => kin.present && !kin.dead && !kin.away,
-  );
-}
-
-function whoLabel(kin: Kin): string {
-  return kin.role === "spouse" ? kin.name : `${kin.call}${kin.name}`;
-}
-
-export function touchedWho(house: Household | null, text: string): string {
-  if (!house) return "家裡";
-  const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
-  const named = people.find((kin) => kin.name && text.includes(kin.name));
-  if (named) return whoLabel(named);
-  const living = livingPeople(house)[0];
-  return living ? whoLabel(living) : "家裡";
-}
-
-function workPhrase(house: Household | null, age: number): string {
-  if (!house) return "生計還沒寫上";
-  if (!house.seen.includes("job") && age < house.jobSince) return `${house.hamlet}的日子`;
-  return `${house.jobPlace}${house.job}`;
-}
-
-function placePhrase(life: SlantLife): string {
-  const house = life.household;
-  if (!house) return "這一帶";
-  return `${house.region}的${house.hamlet}`;
-}
-
 function pushLine(life: SlantLife, text: string) {
   if (life.yearLines.length < 2) {
     life.yearLines.push(text);
@@ -96,19 +65,11 @@ export function applyAimTune(life: SlantLife) {
 }
 
 export function rewriteAimClause(life: SlantLife) {
-  const house = life.household;
-  const clause = aimClause(
-    life.aim,
-    house ? touchedWho(house, life.yearLines.join("")) : "家裡",
-    placePhrase(life),
-    workPhrase(house, life.yearAge),
-  );
-  const index = life.yearLines.findIndex((line) => line.includes("重心落在"));
-  if (index >= 0) {
-    life.yearLines[index] = life.yearLines[index]!.replace(/重心落在[^。]*。/g, clause);
-    return;
-  }
-  pushLine(life, clause);
+  const cleaned = life.yearLines
+    .map((line) => line.replace(/重心落在[^。]*。/g, "").replace(/這一筆碰到[^。]*。/g, "").trim())
+    .filter(Boolean);
+  life.yearKinds = life.yearKinds.slice(0, cleaned.length);
+  life.yearLines = cleaned;
 }
 
 export function focusForAim(aim: AimId): FocusId {
@@ -142,7 +103,7 @@ function applySpendEffect(life: SlantLife, id: SpendId) {
   const house = life.household;
   if (id === "home") {
     life.bond = clamp(life.bond + 6);
-    if (house) noteYearRipple(house, life.yearAge, "家裡的人");
+    if (house) noteYearRipple(house, life.yearAge, "留過靈石在屋裡");
   } else if (id === "pill") {
     if (life.mortal || life.realm.startsWith("qi-")) life.lifespan += 3;
     else life.progress = clamp(life.progress + 6, TUNING.progressCap);
@@ -155,12 +116,57 @@ function applySpendEffect(life: SlantLife, id: SpendId) {
     house.spouse.present = true;
     house.spouse.born = life.yearAge;
     life.bond = clamp(life.bond + 4);
-    noteYearRipple(house, life.yearAge, house.spouse.name);
+    noteYearRipple(house, life.yearAge, `和${house.spouse.name}成了家`);
   } else if (id === "part" && house && house.spouse.present) {
     house.spouse.away = true;
     life.bond = clamp(life.bond - 4);
-    noteYearRipple(house, life.yearAge, house.spouse.name);
+    noteYearRipple(house, life.yearAge, `和${house.spouse.name}分開住`);
   }
+}
+
+function homePerson(life: SlantLife): string {
+  const house = life.household;
+  if (!house) return "家裡";
+  if (house.mother.present && !house.mother.dead) return `母親${house.mother.name}`;
+  if (house.father.present && !house.father.dead) return `父親${house.father.name}`;
+  return "家裡";
+}
+
+function spendSentence(life: SlantLife, id: SpendId, cost: number, again: boolean): string {
+  const house = life.household;
+  const home = house?.home ?? "屋裡";
+  const hamlet = house?.hamlet ?? "這裡";
+  const who = homePerson(life);
+  const turn = life.yearAge % 3;
+  if (id === "home") {
+    if (turn === 0) return `${who}問這個月過不過得去。你把${cost}塊靈石放在${home}的桌上。`;
+    if (turn === 1) return again ? `你又把${cost}塊靈石交到${who}手裡。` : `收工以後，你把${cost}塊靈石交到${who}手裡。`;
+    return `你把${cost}塊靈石留在${home}。${who}收著，沒有多問。`;
+  }
+  if (id === "pill") {
+    const body = life.mortal || life.realm.startsWith("qi-");
+    if (body) return `你在${hamlet}買了一顆養身的丹，回到${home}服下，人緩過來一點。`;
+    return `你買了一顆對這境的丹，服完，吐納順了一些。`;
+  }
+  if (id === "peer") {
+    if (turn === 1) return `同歲的人來找你。你在${hamlet}請他們坐了一坐，話比功法多。`;
+    return `你請同歲的人在${house?.market ?? hamlet}坐到天黑，花了${cost}塊靈石。`;
+  }
+  if (id === "job") return `你去問了一份別的活。明年也許不在原來的地方做，${hamlet}的屋子還留著。`;
+  if (id === "propose" && house) return `你托人去提親。${house.spouse.name}後來進了${home}。`;
+  if (id === "part" && house) return `你和${house.spouse.name}分開住。人還在${hamlet}，只是不回同一張桌。`;
+  return `你花了${cost}塊靈石，把這件事辦了。`;
+}
+
+function stopSentence(life: SlantLife, id: SpendId): string {
+  const house = life.household;
+  const who = homePerson(life);
+  if (id === "home") return `你本想再留一筆給${who}，摸了摸口袋，靈石不夠，今年做不成。`;
+  if (id === "peer") return `你本想再請同輩坐坐，靈石不夠，人就自己回了${house?.home ?? "屋裡"}。`;
+  if (id === "pill") return `你在鋪子前站了一會，靈石不夠買那顆丹，空手回了${house?.home ?? "屋裡"}。`;
+  if (id === "job") return `你想換一份活，靈石不夠打點，這事先放下。`;
+  if (id === "propose") return `你想提親，靈石不夠，這門親事今年提不成。`;
+  return `你想辦的那件事，靈石不夠，今年就停了。`;
 }
 
 export function spendStone(life: SlantLife, id: SpendId): boolean {
@@ -168,7 +174,7 @@ export function spendStone(life: SlantLife, id: SpendId): boolean {
   if (!offer || life.stones < offer.cost) return false;
   life.stones = Math.max(0, Math.round(life.stones - offer.cost));
   applySpendEffect(life, id);
-  pushLine(life, `${offer.record}靈石少了${offer.cost}塊，還剩${Math.round(life.stones)}塊。`);
+  pushLine(life, spendSentence(life, id, offer.cost, false));
   return true;
 }
 
@@ -185,8 +191,7 @@ export function beginYearSlant(life: SlantLife) {
   }
 }
 
-export function finishYearSlant(life: SlantLife, before: { heart: number; stones: number }) {
-  const house = life.household;
+export function finishYearSlant(life: SlantLife, _before: { heart: number; stones: number }) {
   if (life.jobNote) {
     if (life.yearLines.length === 0) pushLine(life, life.jobNote);
     else life.yearLines[0] = `${life.jobNote}${life.yearLines[0]}`;
@@ -195,27 +200,14 @@ export function finishYearSlant(life: SlantLife, before: { heart: number; stones
   if (life.autoSpend && life.autoSpentAge !== life.yearAge) {
     const offer = offerFor(life, life.autoSpend);
     if (!offer || life.stones < offer.cost) {
-      const name = offer?.name ?? "那一件";
-      pushLine(life, `靈石不夠，${name}的自動停下。`);
+      pushLine(life, stopSentence(life, life.autoSpend));
       life.autoSpend = null;
     } else {
       life.stones = Math.max(0, Math.round(life.stones - offer.cost));
       applySpendEffect(life, life.autoSpend);
-      pushLine(life, `自動做了${offer.name}。${offer.record}靈石少了${offer.cost}塊，還剩${Math.round(life.stones)}塊。`);
+      pushLine(life, spendSentence(life, life.autoSpend, offer.cost, true));
       life.autoSpentAge = life.yearAge;
     }
   }
   applyAimTune(life);
-  const who = touchedWho(house, life.yearLines.join(""));
-  const work = workPhrase(house, life.yearAge);
-  const heartDelta = Math.round(life.heart) - before.heart;
-  const stoneDelta = Math.round(life.stones) - before.stones;
-  const heartText = heartDelta > 1 ? "心境鬆了一點" : heartDelta < -1 ? "心境沉了一截" : "心境沒有大動";
-  const stoneText = stoneDelta > 0 ? `靈石多了${stoneDelta}塊` : stoneDelta < 0 ? `靈石少了${-stoneDelta}塊` : "靈石沒有動";
-  const tail = `這一筆碰到${who}，生計是${work}，${heartText}，${stoneText}。`;
-  if (!life.yearLines.some((line) => line.includes("這一筆碰到"))) {
-    pushLine(life, tail);
-  }
-  if (house) noteYearRipple(house, life.yearAge, who);
-  rewriteAimClause(life);
 }

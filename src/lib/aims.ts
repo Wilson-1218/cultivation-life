@@ -46,22 +46,6 @@ export function aimOptions(age: number, highRealm: boolean): AimOption[] {
   ];
 }
 
-export function aimClause(aim: AimId, who: string, place: string, work: string): string {
-  if (aim === "cultivate") {
-    return `重心落在修煉：人在${place}，修為往上，${who}和${work}這一年被鬆下。`;
-  }
-  if (aim === "family") {
-    return `重心落在養家：人在${place}，${who}被你顧著，家裡的關係往上，修為慢了一點。`;
-  }
-  if (aim === "work") {
-    return `重心落在做事：人在${place}，生計守著${work}，心境少了一點，修為也慢。`;
-  }
-  if (aim === "friends") {
-    return `重心落在結交：人在${place}，同輩那邊往上，修為少走一點。`;
-  }
-  return `重心落在養身：人在${place}，壽元往上墊了一點，修為慢下來。`;
-}
-
 export type SpendOffer = {
   id: SpendId;
   name: string;

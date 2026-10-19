@@ -1,3 +1,4 @@
+import type { AimId } from "./aims";
 import { kinName, outsiderName } from "./names";
 import type { OriginId, RealmId } from "./world";
 
@@ -216,19 +217,19 @@ export function buildHousehold(input: {
   const originPost = pickFrom(ORIGIN_POSTS[input.originId], seed, 0x51);
   const sectPost = pickFrom(SECT_POSTS, seed, 0x52);
   const highPost = pickFrom(HIGH_POSTS, seed, 0x53);
-  const father = blankKin("father", kinName(seed, 0x41, surname, "m", avoid), "父親", true, 0);
-  const mother = blankKin("mother", kinName(seed, 0x42, surname, "f", avoid), "母親", true, 0);
+  const father = blankKin("father", kinName(seed, 0x41, surname, "m", avoid, "elder"), "父親", true, 0);
+  const mother = blankKin("mother", kinName(seed, 0x42, surname, "f", avoid, "elder"), "母親", true, 0);
   const siblings = [
     blankKin("sibling", kinName(seed, 0x43, surname, olderCall === "哥哥" ? "m" : "f", avoid), olderCall, true, 0),
     blankKin("sibling", kinName(seed, 0x44, surname, youngerCall === "弟弟" ? "m" : "f", avoid), youngerCall, false, 6),
   ];
   const spouse = blankKin("spouse", outsiderName(seed, 0x45, surname, "f", avoid), "配偶", false, 0);
   const children = [
-    blankKin("child", kinName(seed, 0x46, surname, childCall === "兒子" ? "m" : "f", avoid), childCall, false, 0),
+    blankKin("child", kinName(seed, 0x46, surname, childCall === "兒子" ? "m" : "f", avoid, "child"), childCall, false, 0),
   ];
   if (mix(seed, 0x47) % 3 !== 0) {
     children.push(
-      blankKin("child", kinName(seed, 0x48, surname, childCall2 === "兒子" ? "m" : "f", avoid), childCall2, false, 0),
+      blankKin("child", kinName(seed, 0x48, surname, childCall2 === "兒子" ? "m" : "f", avoid, "child"), childCall2, false, 0),
     );
   }
   const childInLaw = outsiderName(seed, 0x49, surname, childCall === "兒子" ? "f" : "m", avoid);
@@ -378,10 +379,23 @@ function goneClause(house: Household): string {
 function workLine(house: Household, ctx: HomeContext): string {
   const changed = syncJob(house, ctx);
   if (changed) return `${changed}${goneClause(house)}${memoryClause(house, ctx.age)}`;
-  const spouse = house.spouse.present && !house.spouse.dead ? `${house.spouse.name}在屋裡。` : "";
-  const child = house.children.find((kin) => kin.present && !kin.dead);
-  const childText = child ? `${child.call}${child.name}也在。` : "";
-  return `${ctx.age}歲，你仍在${house.jobPlace}${house.job}。${house.mate}跟你收工，回到${house.home}。${spouse}${childText}${goneClause(house)}${memoryClause(house, ctx.age)}`;
+  return `${quietWork(house, ctx)}${goneClause(house)}`;
+}
+
+function quietWork(house: Household, ctx: HomeContext): string {
+  const duty = `${house.jobPlace}${house.job}`;
+  const home = house.home;
+  const kin = livingKin(house)[0];
+  const who = kin ? kinLabel(kin) : house.mate;
+  const spouse = house.spouse.present && !house.spouse.dead && !house.spouse.away ? house.spouse.name : "";
+  const child = house.children.find((item) => item.present && !item.dead && !item.away);
+  const n = (ctx.age * 3 + house.hamlet.charCodeAt(0) + house.originId.charCodeAt(0)) % 5;
+  if (n === 0) return `${ctx.age}歲，${duty}做到天黑才收。你回${home}，${who}還醒著。`;
+  if (n === 1) return `${ctx.age}歲，${house.mate}在${house.jobPlace}路口等你。兩人走回${home}，路上沒怎麼說話。`;
+  if (n === 2 && child) return `${ctx.age}歲，你把${duty}的工錢帶回來。${child.call}${child.name}在門口看見你，先伸手。`;
+  if (n === 3 && spouse) return `${ctx.age}歲，${spouse}把飯留在${home}。你從${duty}回來，人已經累得不想再出門。`;
+  if (n === 2 || n === 3) return `${ctx.age}歲，${house.hamlet}的日子還是${duty}。晚上${who}在${home}，燈點到你進門。`;
+  return `${ctx.age}歲，${who}問你今天${house.job}順不順。你在${house.jobPlace}做了一整天，回${home}才答。`;
 }
 
 function parentOf(house: Household, who: "father" | "mother"): Kin {
@@ -538,16 +552,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，父親${house.father.name}和母親${house.mother.name}都不在了。你在${house.home}還記得他們。${extra ? `也還記得${extra}。` : ""}`;
   }
   if (id.startsWith("work-")) return workLine(house, ctx);
-  const gone = [house.father, house.mother].filter((kin) => kin.dead).map((kin) => `${kin.call}${kin.name}`).join("、");
-  const memory = gone ? `${gone}已經不在，名字還在。` : "";
-  const duty = `${house.jobPlace}${house.job}`;
-  if (ctx.age % 3 === 1) {
-    return `${ctx.age}歲，${house.mate}還是在${duty}等你收工。回到${house.home}，${atHome(house)}。${memory}${memoryClause(house, ctx.age)}`;
-  }
-  if (ctx.age % 3 === 2) {
-    return `${ctx.age}歲，${duty}這一天做完，人還是回${house.home}。${memory}${house.hamlet}沒有換成別的地方。${memoryClause(house, ctx.age)}`;
-  }
-  return `${ctx.age}歲，你還在${duty}。${atHome(house)}。${memory}${memoryClause(house, ctx.age)}`;
+  return quietWork(house, ctx);
 }
 
 function livingCall(house: Household, call: string): boolean {
@@ -571,29 +576,80 @@ export function householdBlocks(
   return false;
 }
 
-export function yearMatter(house: Household | null, age: number, region: string): string {
-  if (!house) return `${age}歲這一年，人在${region}。生計還沒寫上。`;
-  const place = `${house.region}的${house.hamlet}`;
-  const work =
-    !house.seen.includes("job") && age < house.jobSince
-      ? `生計還沒定，人在${house.home}`
-      : `白天在${house.jobPlace}${house.job}，晚上回${house.home}`;
-  const kin = spotlight(house);
-  const older = house.memories.filter((item) => !item.startsWith(`${age}歲`));
-  const memory = older.length > 0 ? `心裡還記著${older[older.length - 1]}` : "";
-  return `${age}歲這一年，人在${place}。${work}。${kin}${memory ? `。${memory}` : ""}。`;
+function tilt(house: Household, age: number, aim: string): number {
+  let hash = age * 17 + house.hamlet.charCodeAt(0);
+  for (const char of `${aim}${house.originId}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return hash >>> 0;
 }
 
-function spotlight(house: Household): string {
+function working(house: Household, age: number): boolean {
+  return house.seen.includes("job") || age >= house.jobSince;
+}
+
+export function yearMatter(house: Household | null, age: number, region: string, aim: AimId = "cultivate"): string {
+  if (!house) return `${age}歲，人在${region}過這一年。`;
+  const options = yearScenes(house, age, aim);
+  const start = tilt(house, age, aim) % options.length;
+  for (let step = 0; step < options.length; step += 1) {
+    const text = options[(start + step) % options.length]!();
+    if (text) return text;
+  }
+  return `人在${house.hamlet}的${house.home}。`;
+}
+
+function yearScenes(house: Household, age: number, aim: AimId): Array<() => string | null> {
+  const home = house.home;
+  const hamlet = house.hamlet;
+  const job = working(house, age) ? `${house.jobPlace}${house.job}` : "";
+  const mother = !house.mother.dead && house.mother.present ? `母親${house.mother.name}` : "";
+  const father = !house.father.dead && house.father.present ? `父親${house.father.name}` : "";
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
   const sick = people.find((kin) => kin.present && kin.sick && !kin.dead);
-  if (sick) return `${kinLabel(sick)}病著，人在${house.home}`;
   const child = house.children.find((kin) => kin.present && !kin.dead && !kin.away);
-  if (child) return `${kinLabel(child)}在家裡`;
-  if (house.spouse.present && !house.spouse.dead && !house.spouse.away) return `${house.spouse.name}在${house.home}`;
-  if (house.mother.present && !house.mother.dead) return `母親${house.mother.name}在${house.home}`;
-  if (house.father.present && !house.father.dead) return `父親${house.father.name}在${house.home}`;
-  return `${house.home}裡這一年沒有別的人`;
+  const spouse = house.spouse.present && !house.spouse.dead && !house.spouse.away ? house.spouse.name : "";
+  const older = house.siblings.find((kin) => kin.present && !kin.dead && !kin.away);
+  const near = sick ? kinLabel(sick) : child ? `${child.call}${child.name}` : spouse || older ? (older ? `${older.call}${older.name}` : spouse) : mother || father || "家裡的人";
+  if (aim === "family") {
+    return [
+      () => (sick ? `${kinLabel(sick)}病著，你守在${home}，功法合上了。` : null),
+      () => (child ? `${child.call}${child.name}還小，你留在${home}看著，${job || hamlet}那邊的事放一放。` : null),
+      () => (job ? `從${job}回來，你先去看${near}。今晚沒有打坐。` : `${near}在${home}，你今天沒有出門練功。`),
+      () => (mother ? `${mother}在灶前咳了兩聲。你把水遞過去，吐納推到以後。` : null),
+      () => `${near}說想你在家。你就留在${hamlet}，墊子上落了一層灰。`,
+    ];
+  }
+  if (aim === "work") {
+    return [
+      () => (job ? `${job}從早做到天黑。回到${home}，${near}把飯熱過一遍。` : null),
+      () => (job ? `這一年靠${job}那份工。工錢交到${home}，打坐的位子空著。` : null),
+      () => (father && !job ? `你跟著${father}在${hamlet}學做事。功法只在睡前看了兩眼。` : null),
+      () => (job ? `${house.jobPlace}缺人，你留下把班頂完。${hamlet}的燈，你總是後一批才看見。` : `你在${hamlet}幫著做事，${home}的門到晚上才關。`),
+      () => (spouse ? `${spouse}問你累不累。你說${job || "今天的活"}還沒完。` : null),
+    ];
+  }
+  if (aim === "friends") {
+    return [
+      () => `你在${hamlet}口跟同歲的人坐到天黑。${mother || near}在${home}留了飯。`,
+      () => (job ? `${job}的班你今天沒去滿。人在${house.market}跟同輩說話，功法落在${home}。` : null),
+      () => (father ? `同歲的人來${home}找你。說到${father}咳了一聲，才散。` : `有人在${house.river}邊等你。你去了，家裡的活是${near}做的。`),
+      () => `${house.market}今天人多。你沒有回${home}練功，跟同輩繞著${hamlet}走了一圈。`,
+    ];
+  }
+  if (aim === "health") {
+    return [
+      () => (mother ? `你這一年睡得早。${mother}說這樣也好，吐納只在天亮前一小會。` : null),
+      () => (sick ? `${kinLabel(sick)}病著，你自己也沒有硬練，人在${home}歇著。` : `身子發沉，你沒有硬練。${near}在${home}給你熱了湯。`),
+      () => (job ? `${job}你照做，下工就回${home}躺下，功法沒有再翻。` : null),
+      () => `你把打坐改成走路，從${hamlet}慢慢走到${house.river}邊，再走回來。`,
+    ];
+  }
+  return [
+    () => (sick ? `你仍想練功，可${kinLabel(sick)}病著，人只在${home}裡打坐，門沒出。` : null),
+    () => (!job && father ? `天沒亮你就在${home}後面坐下。${father}出門，從你身邊走過，沒有叫你。` : null),
+    () => (job ? `下工以後的時辰你都給了吐納。${near}叫你吃飯，叫了兩次。` : null),
+    () => (mother ? `${hamlet}有人喊你，你應了一聲，人還在打坐。${mother}看了你一眼，沒再喊。` : null),
+    () => (older ? `功法翻到舊的那一頁。${older.call}${older.name}在門外說話，你沒有出去。` : `你在${home}坐到窗紙發白。${hamlet}的人聲起來了，你才起身。`),
+  ];
 }
 
 export function describeWork(house: Household | null, age: number): string {
@@ -624,9 +680,9 @@ export function kinDoing(kin: Kin, house: Household, age: number): string {
   return `在${house.home}裡`;
 }
 
-export function noteYearRipple(house: Household, age: number, who: string): void {
-  const line = `${age}歲碰到${who}`;
-  if (!house.memories.includes(line)) house.memories.push(line);
+export function noteYearRipple(house: Household, _age: number, phrase: string): void {
+  if (!phrase || house.memories.includes(phrase)) return;
+  house.memories.push(phrase);
 }
 
 export function shiftLivelihood(house: Household): string {
@@ -656,7 +712,7 @@ export function shiftLivelihood(house: Household): string {
     house.jobPlace = locate(house, calm, next.slot);
   }
   if (!house.seen.includes("job")) house.seen.push("job");
-  return `生計從${previous}換成在${house.jobPlace}${house.job}。${house.hamlet}的屋子還在。`;
+  return `你不去${previous}了，改到${house.jobPlace}${house.job}。${house.hamlet}的屋子還留著。`;
 }
 
 export function bindHousehold(text: string, house: Household | null | undefined): string {
