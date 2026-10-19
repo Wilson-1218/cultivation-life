@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { BuriedRelic, KarmaBoost, LifeThread, NamedPerson, RealmId, RootId, ThreadKind, WorldId } from "@/lib/world";
+import type { BuriedRelic, KarmaGift, LifeThread, NamedPerson, RealmId, RootId, ThreadKind, WorldId } from "@/lib/world";
 
 export type PastLife = {
   id: string;
@@ -68,9 +68,19 @@ export function clearPast(): PastLife[] {
   return [];
 }
 
+export const GIFT_COST: Record<KarmaGift, number> = {
+  root: 1,
+  origin: 1,
+  ease: 2,
+  stones: 1,
+  span: 2,
+};
+
+const GIFTS: KarmaGift[] = ["root", "origin", "ease", "stones", "span"];
+
 export type KarmaState = {
   points: number;
-  boost: KarmaBoost | null;
+  gifts: KarmaGift[];
   buried: BuriedRelic | null;
   foe: NamedPerson | null;
   haunt: NamedPerson | null;
@@ -83,7 +93,7 @@ const KARMA_EVENT = "baiyi-karma-change";
 
 const EMPTY_KARMA: KarmaState = {
   points: 0,
-  boost: null,
+  gifts: [],
   buried: null,
   foe: null,
   haunt: null,
@@ -132,13 +142,24 @@ function writeKarma(next: KarmaState) {
   window.dispatchEvent(new Event(KARMA_EVENT));
 }
 
+function parseGifts(parsed: Partial<KarmaState> & { boost?: string }): KarmaGift[] {
+  const found = new Set<KarmaGift>();
+  if (Array.isArray(parsed.gifts)) {
+    for (const gift of parsed.gifts) {
+      if (GIFTS.includes(gift)) found.add(gift);
+    }
+  }
+  if (parsed.boost === "root" || parsed.boost === "origin") found.add(parsed.boost);
+  return GIFTS.filter((gift) => found.has(gift));
+}
+
 function parseKarma(raw: string): KarmaState {
   if (!raw || raw === SERVER) return EMPTY_KARMA;
   try {
-    const parsed = JSON.parse(raw) as Partial<KarmaState>;
+    const parsed = JSON.parse(raw) as Partial<KarmaState> & { boost?: string };
     return {
       points: typeof parsed.points === "number" ? Math.max(0, Math.floor(parsed.points)) : 0,
-      boost: parsed.boost === "root" || parsed.boost === "origin" ? parsed.boost : null,
+      gifts: parseGifts(parsed),
       buried:
         parsed.buried && typeof parsed.buried.item === "string" && typeof parsed.buried.region === "string"
           ? {
@@ -173,7 +194,7 @@ export function grantKarma(input: {
   if (current.grantedId === input.id) return current;
   const next: KarmaState = {
     points: Math.max(0, Math.floor(input.points)),
-    boost: null,
+    gifts: [],
     buried: input.bury ?? current.buried,
     foe: input.foe,
     haunt: input.haunt,
@@ -184,15 +205,16 @@ export function grantKarma(input: {
   return next;
 }
 
-export function spendKarma(boost: KarmaBoost): boolean {
+export function spendKarma(gift: KarmaGift): boolean {
   const current = readKarma();
-  if (current.boost || current.points < 1) return false;
-  writeKarma({ ...current, points: current.points - 1, boost });
+  const cost = GIFT_COST[gift];
+  if (current.gifts.includes(gift) || current.points < cost) return false;
+  writeKarma({ ...current, points: current.points - cost, gifts: [...current.gifts, gift] });
   return true;
 }
 
 export function consumeKarma(): {
-  boost: KarmaBoost | null;
+  gifts: KarmaGift[];
   buried: BuriedRelic | null;
   foe: NamedPerson | null;
   haunt: NamedPerson | null;
@@ -201,7 +223,7 @@ export function consumeKarma(): {
   const current = readKarma();
   writeKarma({
     points: 0,
-    boost: null,
+    gifts: [],
     buried: current.buried,
     foe: current.foe,
     haunt: current.haunt,
@@ -209,7 +231,7 @@ export function consumeKarma(): {
     grantedId: "",
   });
   return {
-    boost: current.boost,
+    gifts: current.gifts,
     buried: current.buried,
     foe: current.foe,
     haunt: current.haunt,

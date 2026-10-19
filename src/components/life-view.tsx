@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RealmLadder } from "@/components/realm-ladder";
 import { YearGrid } from "@/components/year-grid";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { Mark, buttonMark, choiceMarks, passageMark } from "@/components/marks";
 import { companionNow, type Companion, type Life } from "@/lib/engine";
 import { aimOptions, spendOffers, type AimId, type SpendId } from "@/lib/aims";
 import { figureMap } from "@/lib/figures";
-import { describeWork, kinDoing, yearMatter, type Household, type Kin } from "@/lib/household";
+import { describeWork, kinTrade, yearMatter, type Household, type Kin } from "@/lib/household";
 import {
   ORIGINS,
   ROOTS,
@@ -39,6 +39,7 @@ export function LifeView({
   onAuto,
   onSpeed,
   onSkip,
+  onYear,
   onAim,
   onSpend,
   onAutoSpend,
@@ -56,6 +57,7 @@ export function LifeView({
   onAuto: () => void;
   onSpeed: (speed: PlaySpeed) => void;
   onSkip: () => void;
+  onYear: () => void;
   onAim: (aim: AimId) => void;
   onSpend: (id: SpendId) => void;
   onAutoSpend: (id: SpendId) => void;
@@ -141,10 +143,18 @@ export function LifeView({
             自動抉擇
           </Button>
         </div>
+        <div className="mx-auto w-full max-w-6xl px-4 pb-3 sm:px-6">
+          <YearBar
+            token={life.years}
+            duration={3000 / speed}
+            active={!paused && !finished && !life.pending}
+            onDone={onYear}
+          />
+        </div>
       </header>
 
       <p className="mx-auto max-w-6xl px-4 pt-3 text-sm leading-6 text-muted-foreground sm:px-6">
-        想看快一點可以按 4× 或 8×，遇到抉擇會停下來。
+        1× 大約三秒過一年。遇到抉擇會停下來。
       </p>
       {choice ? (
         <p className="mx-auto max-w-6xl px-4 pt-2 text-sm font-semibold leading-6 text-[#9c2f2a] sm:px-6">
@@ -537,5 +547,73 @@ function kinRows(house: Household | null, age: number): { name: string; who: str
 function kinParts(kin: Kin, house: Household, age: number): { name: string; who: string; doing: string } | null {
   if (!kin.present && !kin.dead && !kin.away) return null;
   const who = kin.role === "spouse" ? kin.name : `${kin.call} ${kin.name}`;
-  return { name: kin.name, who, doing: kinDoing(kin, house, age) };
+  return { name: kin.name, who, doing: kinTrade(kin, house, age) };
+}
+
+function YearBar({
+  token,
+  duration,
+  active,
+  onDone,
+}: {
+  token: number;
+  duration: number;
+  active: boolean;
+  onDone: () => void;
+}) {
+  const [width, setWidth] = useState(0);
+  const widthRef = useRef(0);
+  const doneRef = useRef(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  useEffect(() => {
+    widthRef.current = 0;
+    doneRef.current = false;
+    setWidth(0);
+  }, [token]);
+
+  useEffect(() => {
+    if (!active) return;
+    const started = performance.now() - (widthRef.current / 100) * duration;
+    let frame = 0;
+    const finish = () => {
+      widthRef.current = 100;
+      setWidth(100);
+      if (doneRef.current) return;
+      doneRef.current = true;
+      onDoneRef.current();
+    };
+    const tick = (now: number) => {
+      if (doneRef.current) return;
+      const next = Math.min(100, ((now - started) / duration) * 100);
+      widthRef.current = next;
+      setWidth(next);
+      if (next >= 100) {
+        finish();
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const remaining = Math.max(0, duration * (1 - widthRef.current / 100));
+    const timer = window.setTimeout(finish, remaining);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [active, duration, token]);
+
+  return (
+    <div
+      className="h-1.5 w-full overflow-hidden bg-border"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(width)}
+      aria-label="這一年的進度"
+    >
+      <div className="h-full bg-[#9c2f2a]" style={{ width: `${width}%` }} />
+    </div>
+  );
 }

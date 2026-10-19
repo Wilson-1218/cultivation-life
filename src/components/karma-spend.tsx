@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { spendKarma, useKarma } from "@/lib/storage";
-import type { ThreadKind } from "@/lib/world";
+import { GIFT_COST, spendKarma, useKarma } from "@/lib/storage";
+import type { KarmaGift, ThreadKind } from "@/lib/world";
 
 function threadLabel(kind: ThreadKind): string {
   if (kind === "kin") return "前世同門";
@@ -13,16 +13,24 @@ function threadLabel(kind: ThreadKind): string {
   return "死法留下的舊傷";
 }
 
+const OFFERS: { id: KarmaGift; label: string }[] = [
+  { id: "root", label: "花 1 點，靈根往上偏一檔" },
+  { id: "origin", label: "花 1 點，出身偏到家族旁系" },
+  { id: "ease", label: "花 2 點，下一世修為容易突破" },
+  { id: "stones", label: "花 1 點，下一世起步多一筆靈石" },
+  { id: "span", label: "花 2 點，下一世壽元寬一截" },
+];
+
 export function KarmaSpend() {
   const karma = useKarma();
   if (!karma) {
     return <p className="text-sm text-muted-foreground">天道點數還在翻。</p>;
   }
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <p className="text-sm leading-7">
         天道點數 <span className="num">{karma.points}</span>
-        。只夠下一世用。這一世開始之後，沒花掉的就清掉，不往後疊。
+        。花得起的都能買，只作用在下一世。這一世開始之後，沒花掉的就清掉，不往後疊。
       </p>
       {karma.buried ? (
         <p className="text-sm leading-7 text-muted-foreground">
@@ -45,30 +53,23 @@ export function KarmaSpend() {
           下一世早段，腦子裡會有{karma.haunt.name}開口。聽可以得到一截靈石，後面還有一次奪舍。壓下去就沒有。
         </p>
       ) : null}
-      {karma.boost ? (
-        <p className="text-sm leading-7">
-          下一世會用上：{karma.boost === "root" ? "靈根往上偏一檔。" : "出身落在修仙家族旁系。"}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button
-            variant="outline"
-            className="h-10"
-            disabled={karma.points < 1}
-            onClick={() => spendKarma("root")}
-          >
-            花 1 點，靈根往上偏一檔
-          </Button>
-          <Button
-            variant="outline"
-            className="h-10"
-            disabled={karma.points < 1}
-            onClick={() => spendKarma("origin")}
-          >
-            花 1 點，出身偏到家族旁系
-          </Button>
-        </div>
-      )}
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {OFFERS.map((offer) => {
+          const owned = karma.gifts.includes(offer.id);
+          const short = karma.points < GIFT_COST[offer.id];
+          return (
+            <Button
+              key={offer.id}
+              variant="outline"
+              className="h-auto w-full whitespace-normal px-3 py-2 text-left sm:w-auto"
+              disabled={owned || short}
+              onClick={() => spendKarma(offer.id)}
+            >
+              {owned ? `已設下 · ${offer.label}` : offer.label}
+            </Button>
+          );
+        })}
+      </div>
     </div>
   );
 }

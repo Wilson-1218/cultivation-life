@@ -73,7 +73,7 @@ export function EndView({
             <Cell label="住過的地方" value={placesLived(life)} />
             <Cell label="家人" value={familyStory(house)} />
             <Cell label="宗門" value={sectProse(life)} />
-            <Cell label="死因" value={causeProse(life, place)} prominent />
+            <Cell label="死因" value={causeProse(life)} prominent />
           </dl>
 
           <div className="mt-6 grid items-end gap-5 lg:grid-cols-[minmax(0,1fr)_16rem]">
@@ -90,7 +90,7 @@ export function EndView({
               <p className="num text-5xl font-semibold leading-none text-[#1c4d45] sm:text-6xl">{share}%</p>
               <p className="mt-2 text-sm leading-6">同一批裡，活得比你久的比例</p>
               <p className="mt-2 break-words text-sm leading-6">
-                {life.mortal ? "凡人" : "這一境"}常見能活到 {markAge} 歲，你享年 {life.age} 歲。
+                {life.mortal ? "凡人" : "這一境"}常見能活到 {markAge} 歲。你的壽元記到 {life.lifespan} 歲，享年 {life.age} 歲。
                 {life.age < markAge
                   ? `比常見的歲數少了 ${markAge - life.age} 年。`
                   : life.age > markAge
@@ -204,47 +204,51 @@ function Cell({ label, value, prominent }: { label: string; value: string; promi
 }
 
 function originProse(life: Life): string {
-  const origin = ORIGINS[life.originId];
-  const house = life.household;
-  if (!house) return `${origin.name}。${origin.flavor}`;
-  return `${origin.name}。生在${house.region}的${house.hamlet}，${house.home}裡把你養大的是父親${house.father.name}、母親${house.mother.name}。${origin.flavor}`;
+  const origin = ORIGINS[life.originId].name;
+  const hamlet = life.household?.hamlet;
+  return hamlet ? `${origin} · ${hamlet}` : origin;
 }
 
 function livelihood(life: Life): string {
   const house = life.household;
-  if (!house || !house.seen.includes("job")) return "這一世還沒開始做事，日子停在家裡。";
-  return `在${house.jobPlace}${house.job}，從${house.jobSince}歲做到走的時候。晚上還是回${house.hamlet}的${house.home}。`;
+  if (!house || !house.seen.includes("job")) return "還沒開始做事";
+  return `${house.job}，${house.jobSince}歲起到走`;
 }
 
 function sectProse(life: Life): string {
-  const house = life.household;
-  if (!life.sect) return house ? `沒有進宗門，日子都在${house.hamlet}。` : "沒有進宗門。";
-  return house ? `進了${life.sect}，人還是回${house.hamlet}的屋子。` : `進了${life.sect}。`;
+  return life.sect ?? "沒有進宗門";
 }
 
-function causeProse(life: Life, place: string): string {
-  const cause = life.cause || (life.ending === "edge" ? "人還在" : "停在這裡");
-  if (life.ending === "edge") return `${cause}。人還在${place}。`;
-  return `${cause}。日子停在${place}，沒有再往下走。`;
+function causeProse(life: Life): string {
+  if (life.ending === "edge") return life.cause || "人還在";
+  return life.cause || "停在這裡";
 }
 
 function placesLived(life: Life): string {
   const house = life.household;
-  if (!house) return `人在${life.region}走完。`;
-  const spots = [house.market, house.river, house.mountain, house.yard];
+  if (!house) return life.region;
+  const spots = [house.hamlet, house.jobPlace, house.market, house.river, house.mountain, house.yard];
   if (life.sect) spots.push(life.sect);
-  return `住在${house.hamlet}的${house.home}。日子也經過${[...new Set(spots)].join("、")}。`;
+  const names: string[] = [];
+  for (const spot of spots) {
+    if (!spot || spot.endsWith("那間屋")) continue;
+    if (!names.includes(spot)) names.push(spot);
+  }
+  return names.join("、");
 }
 
 function familyStory(house: Household | null): string {
-  if (!house) return "沒有寫上家人。";
+  if (!house) return "沒有寫上";
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
   const known = people.filter((kin) => kin.present || kin.dead || kin.away);
-  const home = known.filter((kin) => kin.present && !kin.dead && !kin.away);
+  const children = house.children.filter((kin) => kin.present || kin.dead || kin.away);
+  const home = known.filter((kin) => kin.role !== "child" && kin.present && !kin.dead && !kin.away);
   const gone = known.filter((kin) => kin.dead);
-  const homeText = home.length === 0 ? "走的時候屋裡沒有別人" : `走時還在的是${home.map((kin) => kin.name).join("、")}`;
-  const goneText = gone.length === 0 ? "" : `已經不在的是${gone.map((kin) => kin.name).join("、")}。`;
-  return `家裡先後有${known.length}人。${homeText}。${goneText}`;
+  const parts: string[] = [];
+  if (children.length > 0) parts.push(`子女${children.map((kin) => kin.name).join("、")}`);
+  if (home.length > 0) parts.push(`還在${home.map((kin) => kin.name).join("、")}`);
+  if (gone.length > 0) parts.push(`先走${gone.map((kin) => kin.name).join("、")}`);
+  return parts.join("，") || "沒有寫上";
 }
 
 function calmestYear(hearts: number[]): number | null {

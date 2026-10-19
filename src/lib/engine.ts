@@ -166,6 +166,8 @@ export type Life = {
   autoSpend: SpendId | null;
   autoSpentAge: number;
   jobNote: string;
+  ease: boolean;
+  spanBonus: number;
 };
 
 type Rng = {
@@ -236,10 +238,17 @@ export function createLife(
   const rng = makeRng(setup.seed || 1);
   let root = options?.forceRoot ?? rollRoot(rng);
   let originId = rollOriginId(setup.seed || 1);
-  const boosted = story && !options?.forceRoot ? setup.boost ?? null : null;
-  if (boosted === "origin") originId = "clan";
-  if (boosted === "root") root = bumpRoot(root);
-  const mortal = story && !options?.forceRoot && !boosted && mixSeed(setup.seed || 1, 0x4d) / 4294967296 < 0.07;
+  const gifts = new Set(story && !options?.forceRoot ? (setup.gifts ?? []) : []);
+  if (story && !options?.forceRoot && setup.boost === "origin") gifts.add("origin");
+  if (story && !options?.forceRoot && setup.boost === "root") gifts.add("root");
+  if (gifts.has("origin")) originId = "clan";
+  if (gifts.has("root")) root = bumpRoot(root);
+  const mortal =
+    story &&
+    !options?.forceRoot &&
+    !gifts.has("root") &&
+    !gifts.has("origin") &&
+    mixSeed(setup.seed || 1, 0x4d) / 4294967296 < 0.07;
   const name = story ? humanName(setup.seed || 1, 0x21) : pick(rng, NAMES);
   const region = pick(rng, REGIONS);
   const living = setup.cohort === "living";
@@ -316,6 +325,8 @@ export function createLife(
     autoSpend: null,
     autoSpentAge: -1,
     jobNote: "",
+    ease: gifts.has("ease"),
+    spanBonus: gifts.has("span") ? 24 : 0,
   };
   life.rngState = rng.state();
   if (story && !mortal && originId === "cauldron") {
@@ -341,6 +352,8 @@ export function createLife(
     life.lifespan = 68 + (mixSeed(setup.seed || 1, 0x3c) % 16);
     life.flash = [];
   }
+  if (gifts.has("span")) life.lifespan += 24;
+  if (gifts.has("stones")) life.stones += 42;
   life.origin = writeOrigin(life);
   if (!story) {
     life.log.push({
@@ -358,7 +371,7 @@ export function createLife(
       const companionSeed = mixSeed(setup.seed || 1, salt);
       const companion = runToEnd(
         createLife(
-          { ...setup, seed: companionSeed, boost: null, buried: null, foe: null, haunt: null, thread: null },
+          { ...setup, seed: companionSeed, boost: null, gifts: [], buried: null, foe: null, haunt: null, thread: null },
           { companions: false, story },
         ),
       );
@@ -791,7 +804,7 @@ export function playStoryYear(life: Life): Life {
 
   const lines: { text: string; kind: LogEntry["kind"] }[] = [];
   const cap = two ? 2 : 1;
-  const realmNote = notes.find((note) => note.includes("境界"));
+  const realmNote = notes.find((note) => note.includes("境界") || note.includes("修為到了"));
   if (realmNote) lines.push({ text: realmNote, kind: "chapter" });
   if (lines.length < cap) {
     const home = pullHome(draft, age);
@@ -1153,6 +1166,7 @@ function applyYear(life: Life, rng: Rng, notes: string[]): void {
     drag *
     (life.spiritSettled ? 0.12 : 1) *
     (life.story && life.originId === "remnant" ? 1.18 : 1) *
+    (life.ease ? 1.28 : 1) *
     (0.86 + rng.next() * 0.26);
   life.progress = clamp(life.progress + gain, 0, TUNING.progressCap);
   if (broke && !notes.includes("靈石見底，吐納發虛。")) {
@@ -1161,15 +1175,23 @@ function applyYear(life: Life, rng: Rng, notes: string[]): void {
   life.stones = Math.max(0, Math.round(life.stones));
 }
 
+function qiMark(life: Life, mark: number): number {
+  return life.ease ? Math.round(mark * 0.78) : mark;
+}
+
 function updateQi(life: Life, notes: string[]): void {
   if (!QI_REALMS.includes(life.realm)) return;
   let next: RealmId = "qi-early";
-  if (life.progress >= TUNING.qiPeak) next = "qi-peak";
-  else if (life.progress >= TUNING.qiLate) next = "qi-late";
-  else if (life.progress >= TUNING.qiMid) next = "qi-mid";
+  if (life.progress >= qiMark(life, TUNING.qiPeak)) next = "qi-peak";
+  else if (life.progress >= qiMark(life, TUNING.qiLate)) next = "qi-late";
+  else if (life.progress >= qiMark(life, TUNING.qiMid)) next = "qi-mid";
   if (next === life.realm) return;
   changeRealm(life, next);
-  notes.push(`境界跨到${realmById(next).name}。這個境界的壽元記到${life.lifespan}歲。`);
+  notes.push(
+    life.ease
+      ? `修為到了${realmById(next).name}。這一次比應有的順，沒有在門口多卡那幾年。`
+      : `境界跨到${realmById(next).name}。這個境界的壽元記到${life.lifespan}歲。`,
+  );
 }
 
 function openGate(life: Life): boolean {
@@ -1329,8 +1351,8 @@ function resolveGate(life: Life, rng: Rng, kind: GateId, choiceId: string): void
       life,
       "choice",
       kind === "spirit"
-        ? `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。這一層每年都要喂靈石，斷了會反噬。`
-        : `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。靈力被抽空一截，人還在。`,
+        ? `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。這一層每年都要喂靈石，斷了會反噬。${life.ease ? "這一次比應有的順。" : ""}`
+        : `${label}成了。花了 ${formatCount(paid)} 塊靈石。壽元改記成 ${life.lifespan} 歲。靈力被抽空一截，人還在。${life.ease ? "這一次比應有的順。" : ""}`,
     );
     return;
   }
@@ -1369,6 +1391,7 @@ function gateChance(life: Life, kind: GateId, paying: boolean): number {
   if (life.senior) chance *= 1.12;
   if (life.ling < 25) chance *= 0.72;
   chance *= WORLDS[life.setup.world].gate;
+  if (life.ease) chance *= 1.22;
   const floor =
     kind === "foundation" ? 0.004 : kind === "core" ? 0.0015 : kind === "nascent" ? 0.0008 : 0.0003;
   return clamp(chance, floor, 0.74);
@@ -1377,7 +1400,7 @@ function gateChance(life: Life, kind: GateId, paying: boolean): number {
 function availableGate(life: Life): GateId | null {
   if (
     QI_REALMS.includes(life.realm) &&
-    life.progress >= TUNING.foundationAt &&
+    life.progress >= (life.ease ? Math.round(TUNING.foundationAt * 0.86) : TUNING.foundationAt) &&
     life.attempts.foundation < 3 &&
     !life.succeeded.foundation
   ) {
@@ -1385,7 +1408,7 @@ function availableGate(life: Life): GateId | null {
   }
   if (
     life.realm === "foundation" &&
-    life.progress >= TUNING.coreAt &&
+    life.progress >= (life.ease ? Math.round(TUNING.coreAt * 0.9) : TUNING.coreAt) &&
     life.attempts.core < 2 &&
     !life.succeeded.core
   ) {
@@ -1393,7 +1416,7 @@ function availableGate(life: Life): GateId | null {
   }
   if (
     life.realm === "core" &&
-    life.progress >= TUNING.nascentAt &&
+    life.progress >= (life.ease ? Math.round(TUNING.nascentAt * 0.9) : TUNING.nascentAt) &&
     life.attempts.nascent < 2 &&
     !life.succeeded.nascent
   ) {
@@ -1401,7 +1424,7 @@ function availableGate(life: Life): GateId | null {
   }
   if (
     life.realm === "nascent" &&
-    life.progress >= TUNING.spiritAt &&
+    life.progress >= (life.ease ? Math.round(TUNING.spiritAt * 0.9) : TUNING.spiritAt) &&
     life.attempts.spirit < 2 &&
     !life.succeeded.spirit
   ) {
@@ -1413,9 +1436,9 @@ function availableGate(life: Life): GateId | null {
 function syncQiToProgress(life: Life): void {
   if (!QI_REALMS.includes(life.realm)) return;
   let next: RealmId = "qi-early";
-  if (life.progress >= TUNING.qiPeak) next = "qi-peak";
-  else if (life.progress >= TUNING.qiLate) next = "qi-late";
-  else if (life.progress >= TUNING.qiMid) next = "qi-mid";
+  if (life.progress >= qiMark(life, TUNING.qiPeak)) next = "qi-peak";
+  else if (life.progress >= qiMark(life, TUNING.qiLate)) next = "qi-late";
+  else if (life.progress >= qiMark(life, TUNING.qiMid)) next = "qi-mid";
   if (next !== life.realm) changeRealm(life, next);
 }
 
@@ -1424,7 +1447,7 @@ function changeRealm(life: Life, realm: RealmId): void {
   closeSpan(life, life.age);
   life.realm = realm;
   life.spans.push({ realm, fromAge: life.age, toAge: null });
-  const cap = realmById(realm).lifespan;
+  const cap = realmById(realm).lifespan + life.spanBonus;
   if (life.lifespan < cap) life.lifespan = cap;
 }
 
@@ -2642,6 +2665,9 @@ function trimLog(life: Life): void {
   const keep = new Set<string>();
   for (const entry of life.log) {
     if (entry.starred || entry.kind === "choice" || entry.kind === "pause" || entry.kind === "system") {
+      keep.add(entry.id);
+    }
+    if (entry.text.includes("比應有的順") || entry.text.includes("修為到了")) {
       keep.add(entry.id);
     }
     if (entry.kind === "home" && /沒有醒來|進門|生了|從這一年|病了|還記得|屋子還在|吵了一架|和好了|分家|認字|傳給你|節日|沒有回來|缺錢|辦了喪|娶了|嫁了|風寒|過壽|舊事/.test(entry.text)) {

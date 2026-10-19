@@ -34,13 +34,8 @@ export function IntroView({ onBegin }: { onBegin: () => void }) {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
       <p className="text-sm tracking-[0.22em] text-[#9c2f2a]">80億人修仙</p>
-      <h1 className="mt-3 max-w-3xl">
-        <span className="block text-xl text-[#5e564c] sm:text-2xl">八十億分之</span>
-        <span className="mt-1 block text-[clamp(6.25rem,24vw,11rem)] leading-[0.82] font-semibold text-[#9c2f2a]">
-          一
-        </span>
-      </h1>
-      <p className="mt-6 max-w-xl text-lg leading-8 text-[#3a332c]">
+      <h1 className="mt-6 max-w-xl text-lg font-normal leading-8 text-[#3a332c]">八十億分之一</h1>
+      <p className="mt-4 max-w-xl text-lg font-normal leading-8 text-[#3a332c]">
         當世人人都踏入了修途。靈氣、名額、機緣被八十億人分薄之後，你落在哪一層，多半在入道那一刻就定了。
       </p>
       <Counters />

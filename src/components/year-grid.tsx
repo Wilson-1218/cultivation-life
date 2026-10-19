@@ -21,14 +21,13 @@ export function YearGrid({
   current?: number | null;
   columns?: number;
 }) {
-  const last = Math.max(lived, markAge ?? lived);
-  const count = last <= 220 ? last + 1 : Math.min(220, lived + 1);
+  const count = Math.min(220, Math.max(0, lived) + 1);
   const markHere = markAge != null && markAge >= 0 && markAge < count;
   let carried = hearts.find((value) => Number.isFinite(value)) ?? 46;
   return (
     <div
-      className="grid w-full min-w-0 gap-1"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      className="grid w-fit max-w-full gap-px"
+      style={{ gridTemplateColumns: `repeat(${columns}, 7px)` }}
       aria-label="人生地圖"
     >
       {Array.from({ length: count }, (_, year) => {
@@ -40,7 +39,7 @@ export function YearGrid({
             key={year}
             title={seen ? `${year}歲，心境 ${Math.round(carried)}` : `${year}歲`}
             className={cn(
-              "aspect-square min-w-0 rounded-[2px] border border-border",
+              "size-[7px] rounded-[1px] border border-border",
               markHere && year === markAge && "border-2 border-foreground",
               current === year && seen && "ring-1 ring-[#9c2f2a]",
             )}

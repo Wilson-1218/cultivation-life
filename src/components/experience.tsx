@@ -35,8 +35,6 @@ type Phase = "intro" | "drawing" | "reveal" | "flash" | "life" | "end";
 
 export type PlaySpeed = 1 | 2 | 4 | 8 | 12 | 16;
 
-const YEAR_MS = 880;
-
 const INITIAL: Setup = {
   world: "now",
   cohort: "entrant",
@@ -67,39 +65,25 @@ export function Experience() {
   useEffect(() => {
     if (phase !== "life" || paused || !life || fault) return;
     if (isFinished(life)) return;
-    if (life.pending) {
-      if (!auto) return;
-      const timer = window.setTimeout(() => {
-        setLife((current) => {
-          if (!current || isFinished(current) || !current.pending) return current;
-          try {
-            if (current.pending.type === "choice") {
-              const choiceId = safeChoiceId(current);
-              settleCarry(choiceId);
-              return applyChoice(current, choiceId, { auto: true });
-            }
-            if (current.pending.type === "reflect") return applyReflection(current, "");
-          } catch {
-            setFault("推演進行到一半斷了。");
-          }
-          return current;
-        });
-      }, 640);
-      return () => window.clearTimeout(timer);
-    }
+    if (!auto || !life.pending) return;
     const timer = window.setTimeout(() => {
       setLife((current) => {
-        if (!current || current.pending || isFinished(current)) return current;
+        if (!current || isFinished(current) || !current.pending) return current;
         try {
-          return playStoryYear(current);
+          if (current.pending.type === "choice") {
+            const choiceId = safeChoiceId(current);
+            settleCarry(choiceId);
+            return applyChoice(current, choiceId, { auto: true });
+          }
+          if (current.pending.type === "reflect") return applyReflection(current, "");
         } catch {
           setFault("推演進行到一半斷了。");
-          return current;
         }
+        return current;
       });
-    }, Math.max(48, Math.round(YEAR_MS / speed)));
+    }, 420);
     return () => window.clearTimeout(timer);
-  }, [phase, auto, paused, life, fault, speed]);
+  }, [phase, auto, paused, life, fault]);
 
   function remember(current: Life) {
     const line = current.reflections.find((item) => item.id === "farewell")?.text ?? "";
@@ -134,7 +118,8 @@ export function Experience() {
     begin({
       ...setup,
       seed,
-      boost: carried.boost,
+      boost: carried.gifts.includes("origin") ? "origin" : carried.gifts.includes("root") ? "root" : null,
+      gifts: carried.gifts,
       buried: carried.buried,
       foe: carried.foe,
       haunt: carried.haunt,
@@ -229,6 +214,7 @@ export function Experience() {
       onPause={() => setPaused((value) => !value)}
       onAuto={() => setAuto((value) => !value)}
       onSpeed={setSpeed}
+      onYear={() => run(playStoryYear)}
       onSkip={() => {
         setLife((current) => {
           if (!current || current.pending || isFinished(current)) return current;

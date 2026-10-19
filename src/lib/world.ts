@@ -19,6 +19,7 @@ export type RealmId =
 export type GateId = "foundation" | "core" | "nascent" | "spirit";
 
 export type OriginId = "village" | "orphan" | "clan" | "cauldron" | "remnant";
+export type KarmaGift = "root" | "origin" | "ease" | "stones" | "span";
 export type KarmaBoost = "root" | "origin";
 
 export type BuriedRelic = {
@@ -47,6 +48,7 @@ export type Setup = {
   seed: number;
   /** 只影響這一世的開局。人口推演不讀這些。 */
   boost?: KarmaBoost | null;
+  gifts?: KarmaGift[];
   buried?: BuriedRelic | null;
   foe?: NamedPerson | null;
   haunt?: NamedPerson | null;

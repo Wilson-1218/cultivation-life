@@ -594,7 +594,7 @@ export function yearMatter(house: Household | null, age: number, region: string,
     const text = options[(start + step) % options.length]!();
     if (text) return text;
   }
-  return `人在${house.hamlet}的${house.home}。`;
+  return `人在${house.home}。`;
 }
 
 function yearScenes(house: Household, age: number, aim: AimId): Array<() => string | null> {
@@ -654,8 +654,21 @@ function yearScenes(house: Household, age: number, aim: AimId): Array<() => stri
 
 export function describeWork(house: Household | null, age: number): string {
   if (!house) return "生計還沒寫上";
-  if (!house.seen.includes("job") && age < house.jobSince) return `還在${house.hamlet}，事情還沒定`;
-  return `在${house.jobPlace}${house.job}，晚上回${house.home}`;
+  if (!house.seen.includes("job") && age < house.jobSince) return "還沒獨立做事";
+  return house.job;
+}
+
+function grownKin(kin: Kin, age: number): boolean {
+  if (kin.role === "father" || kin.role === "mother" || kin.role === "spouse") return true;
+  if (kin.role === "sibling" && kin.born <= 0) return true;
+  return age - kin.born >= 16;
+}
+
+export function kinTrade(kin: Kin, house: Household, age: number): string {
+  if (kin.dead) return "已經不在";
+  if (kin.away) return "不在這屋";
+  if (!grownKin(kin, age)) return "還沒獨立做事";
+  return house.job;
 }
 
 export function kinDoing(kin: Kin, house: Household, age: number): string {
