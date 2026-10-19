@@ -11,6 +11,7 @@ export type Kin = {
   present: boolean;
   away: boolean;
   born: number;
+  trade?: string;
 };
 
 type PlaceSlot = "field" | "river" | "mountain" | "market" | "yard" | "road" | "sect" | "garden";
@@ -232,6 +233,13 @@ export function buildHousehold(input: {
       blankKin("child", kinName(seed, 0x48, surname, childCall2 === "兒子" ? "m" : "f", avoid, "child"), childCall2, false, 0),
     );
   }
+  const kinTrades = ["種田", "打魚", "做護院", "看攤", "跑腿", "采藥", "幫廚", "守門", "縫補", "趕車", "寫帳", "搬貨"].filter(
+    (item) => item !== originPost.job,
+  );
+  const tradeAt = mix(seed, 0x91) % kinTrades.length;
+  [father, mother, ...siblings, spouse, ...children].forEach((person, index) => {
+    person.trade = kinTrades[(tradeAt + index) % kinTrades.length];
+  });
   const childInLaw = outsiderName(seed, 0x49, surname, childCall === "兒子" ? "f" : "m", avoid);
   const mate = outsiderName(seed, 0x4b, surname, "m", avoid);
   const firstLoss: "father" | "mother" = mix(seed, 0x23) % 2 === 0 ? "father" : "mother";
@@ -379,23 +387,7 @@ function goneClause(house: Household): string {
 function workLine(house: Household, ctx: HomeContext): string {
   const changed = syncJob(house, ctx);
   if (changed) return `${changed}${goneClause(house)}${memoryClause(house, ctx.age)}`;
-  return `${quietWork(house, ctx)}${goneClause(house)}`;
-}
-
-function quietWork(house: Household, ctx: HomeContext): string {
-  const duty = `${house.jobPlace}${house.job}`;
-  const home = house.home;
-  const kin = livingKin(house)[0];
-  const who = kin ? kinLabel(kin) : house.mate;
-  const spouse = house.spouse.present && !house.spouse.dead && !house.spouse.away ? house.spouse.name : "";
-  const child = house.children.find((item) => item.present && !item.dead && !item.away);
-  const n = (ctx.age * 3 + house.hamlet.charCodeAt(0) + house.originId.charCodeAt(0)) % 5;
-  if (n === 0) return `${ctx.age}歲，${duty}做到天黑才收。你回${home}，${who}還醒著。`;
-  if (n === 1) return `${ctx.age}歲，${house.mate}在${house.jobPlace}路口等你。兩人走回${home}，路上沒怎麼說話。`;
-  if (n === 2 && child) return `${ctx.age}歲，你把${duty}的工錢帶回來。${child.call}${child.name}在門口看見你，先伸手。`;
-  if (n === 3 && spouse) return `${ctx.age}歲，${spouse}把飯留在${home}。你從${duty}回來，人已經累得不想再出門。`;
-  if (n === 2 || n === 3) return `${ctx.age}歲，${house.hamlet}的日子還是${duty}。晚上${who}在${home}，燈點到你進門。`;
-  return `${ctx.age}歲，${who}問你今天${house.job}順不順。你在${house.jobPlace}做了一整天，回${home}才答。`;
+  return goneClause(house);
 }
 
 function parentOf(house: Household, who: "father" | "mother"): Kin {
@@ -517,7 +509,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     const who = presentSibling(house, 1);
     who.away = true;
     remember(house, `${who.call}${who.name}外出沒有回來`);
-    return `${ctx.age}歲，${who.call}${who.name}說去${house.river}看看，到了夜裡沒有回來。`;
+    return `${ctx.age}歲，${who.call}${who.name}說去${house.river}看船，船翻了，人沒有再上岸。`;
   }
   if (id === "childwork") {
     return `${ctx.age}歲，${child.call}${child.name}也開始做事。你仍在${house.jobPlace}${house.job}，屋子裡要養的人換了一輪。${memoryClause(house, ctx.age)}`;
@@ -552,7 +544,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，父親${house.father.name}和母親${house.mother.name}都不在了。你在${house.home}還記得他們。${extra ? `也還記得${extra}。` : ""}`;
   }
   if (id.startsWith("work-")) return workLine(house, ctx);
-  return quietWork(house, ctx);
+  return "";
 }
 
 function livingCall(house: Household, call: string): boolean {
@@ -639,7 +631,6 @@ function yearScenes(house: Household, age: number, aim: AimId): Array<() => stri
     return [
       () => (mother ? `你這一年睡得早。${mother}說這樣也好，吐納只在天亮前一小會。` : null),
       () => (sick ? `${kinLabel(sick)}病著，你自己也沒有硬練，人在${home}歇著。` : `身子發沉，你沒有硬練。${near}在${home}給你熱了湯。`),
-      () => (job ? `${job}你照做，下工就回${home}躺下，功法沒有再翻。` : null),
       () => `你把打坐改成走路，從${hamlet}慢慢走到${house.river}邊，再走回來。`,
     ];
   }
@@ -665,10 +656,12 @@ function grownKin(kin: Kin, age: number): boolean {
 }
 
 export function kinTrade(kin: Kin, house: Household, age: number): string {
-  if (kin.dead) return "已經不在";
-  if (kin.away) return "不在這屋";
+  if (kin.dead) {
+    if (kin.trade && grownKin(kin, age)) return `生前做${kin.trade}`;
+    return "已經不在";
+  }
   if (!grownKin(kin, age)) return "還沒獨立做事";
-  return house.job;
+  return kin.trade || "種田";
 }
 
 export function kinDoing(kin: Kin, house: Household, age: number): string {

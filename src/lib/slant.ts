@@ -25,6 +25,8 @@ export type SlantLife = {
   realm: RealmId;
   household: Household | null;
   sect: string | null;
+  learned?: string[];
+  manual?: string | null;
 };
 
 const AIM_SHIFT: Record<AimId, { progress: number; bond: number; heart: number; life: number }> = {
@@ -96,6 +98,8 @@ export function offerFor(life: SlantLife, id: SpendId) {
     mortal: life.mortal,
     realm: life.realm,
     spouse: spouseState(life.household),
+    learned: life.learned,
+    manual: life.manual,
   }).find((item) => item.id === id);
 }
 
@@ -112,6 +116,9 @@ function applySpendEffect(life: SlantLife, id: SpendId) {
     life.bond = clamp(life.bond + 2);
   } else if (id === "job") {
     if (house) house.jobShift = true;
+  } else if (id === "manual" && life.learned && life.manual) {
+    const next = life.learned.find((name) => name !== life.manual);
+    if (next) life.manual = next;
   } else if (id === "propose" && house && !house.spouse.present) {
     house.spouse.present = true;
     house.spouse.born = life.yearAge;
@@ -153,6 +160,7 @@ function spendSentence(life: SlantLife, id: SpendId, cost: number, again: boolea
     return `你請同歲的人在${house?.market ?? hamlet}坐到天黑，花了${cost}塊靈石。`;
   }
   if (id === "job") return `你去問了一份別的活。明年也許不在原來的地方做，${hamlet}的屋子還留著。`;
+  if (id === "manual") return `你花了${cost}塊靈石，把主修改成${life.manual ?? "另一部"}。`;
   if (id === "propose" && house) return `你托人去提親。${house.spouse.name}後來進了${home}。`;
   if (id === "part" && house) return `你和${house.spouse.name}分開住。人還在${hamlet}，只是不回同一張桌。`;
   return `你花了${cost}塊靈石，把這件事辦了。`;

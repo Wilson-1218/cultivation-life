@@ -17,7 +17,8 @@ import { Mark, buttonMark, choiceMarks, passageMark } from "@/components/marks";
 import { companionNow, type Companion, type Life } from "@/lib/engine";
 import { aimOptions, spendOffers, type AimId, type SpendId } from "@/lib/aims";
 import { figureMap } from "@/lib/figures";
-import { describeWork, kinTrade, yearMatter, type Household, type Kin } from "@/lib/household";
+import { describeWork, kinTrade, type Household, type Kin } from "@/lib/household";
+import { sectStanding } from "@/lib/persona";
 import {
   ORIGINS,
   ROOTS,
@@ -79,7 +80,6 @@ export function LifeView({
   const realm = realmById(life.realm);
   const age = life.story ? life.yearAge : life.age;
   const house = life.household;
-  const ties = familyTies(house);
   const record = [...life.log].reverse();
   const rootLabel = life.story && !life.revealed ? "尚未測靈" : life.mortal ? "無靈根" : ROOTS[life.root].name;
   const realmLabel = life.mortal && life.revealed ? "凡人" : realm.name;
@@ -89,7 +89,17 @@ export function LifeView({
   const highRealm = !life.mortal && life.revealed && !realm.id.startsWith("qi-");
   const aims = aimOptions(age, highRealm);
   const spouseState = !house || !house.spouse.present || house.spouse.dead ? "none" : house.spouse.away ? "apart" : "here";
-  const offers = spendOffers({ age, mortal: life.mortal, realm: life.realm, spouse: spouseState });
+  const offers = spendOffers({
+    age,
+    mortal: life.mortal,
+    realm: life.realm,
+    spouse: spouseState,
+    learned: life.learned,
+    manual: life.manual,
+  });
+  const otherManuals = life.learned.filter((name) => name !== life.manual);
+  const topAims = aims.filter((item) => item.id !== "health");
+  const healthAim = aims.find((item) => item.id === "health");
 
   return (
     <div className="min-h-dvh overflow-x-hidden pb-8">
@@ -146,7 +156,7 @@ export function LifeView({
         <div className="mx-auto w-full max-w-6xl px-4 pb-3 sm:px-6">
           <YearBar
             token={life.years}
-            duration={3000 / speed}
+            duration={5000 / speed}
             active={!paused && !finished && !life.pending}
             onDone={onYear}
           />
@@ -154,7 +164,7 @@ export function LifeView({
       </header>
 
       <p className="mx-auto max-w-6xl px-4 pt-3 text-sm leading-6 text-muted-foreground sm:px-6">
-        1× 大約三秒過一年。遇到抉擇會停下來。
+        1× 大約五秒過一年。遇到抉擇會停下來。
       </p>
       {choice ? (
         <p className="mx-auto max-w-6xl px-4 pt-2 text-sm font-semibold leading-6 text-[#9c2f2a] sm:px-6">
@@ -177,7 +187,7 @@ export function LifeView({
             <dt className="text-muted-foreground">境界</dt>
             <dd className="flex items-center gap-1.5 break-words">
               <Mark name="realm" className="size-4 text-[#9c2f2a]" />
-              {realmLabel}
+              {life.mortal && life.revealed ? realmLabel : `${realmLabel} · 修為 ${Math.round(life.progress)}`}
             </dd>
             <dt className="text-muted-foreground">出身</dt>
             <dd className="break-words">{ORIGINS[life.originId].name}</dd>
@@ -196,10 +206,18 @@ export function LifeView({
 
           <h2 className="mt-5 text-sm text-muted-foreground">日子</h2>
           <ul className="mt-3 flex flex-col gap-3">
-            <Meter label={life.mortal && life.revealed ? "壽元" : "壽元"} value={Math.round((age / Math.max(1, life.lifespan)) * 100)} text={`${age} / ${life.lifespan}`} />
-            <Meter label="心境" value={life.heart} text={String(Math.round(life.heart))} />
-            <Meter label="家裡的關係" value={ties.score} text={ties.detail} />
+            <Meter label="壽元" value={Math.round((age / Math.max(1, life.lifespan)) * 100)} text={`${age} / ${life.lifespan}`} />
+            <Meter label="氣運" value={life.fortune} text={String(Math.round(life.fortune))} />
+            <Meter label="人脈" value={life.bond} text={String(Math.round(life.bond))} />
+            <Meter label="悟性" value={life.insight} text={String(Math.round(life.insight))} />
           </ul>
+          <div className="mt-4">
+            <p className="text-sm text-muted-foreground">主修功法</p>
+            <p className="mt-1 text-lg font-semibold">{life.manual ?? "還沒有主修"}</p>
+            {otherManuals.length > 0 ? (
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">還學過 {otherManuals.join("、")}</p>
+            ) : null}
+          </div>
           <div className="mt-4">
             <p className="text-sm text-muted-foreground">靈石</p>
             <p className="num mt-1 flex items-center gap-1.5 text-2xl">
@@ -227,39 +245,57 @@ export function LifeView({
             <p className="mt-2 text-sm text-muted-foreground">{placeLine}</p>
             {life.story ? (
               <>
-                <h2 className="mt-2 text-xl font-semibold leading-8">{yearMatter(house, age, life.region, life.aim)}</h2>
-                <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="今年的重心">
-                  {aims.map((item) => {
-                    const on = life.aim === item.id;
-                    return (
+                <div className="mt-3 flex flex-col gap-2">
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="今年的重心">
+                    {topAims.map((item) => {
+                      const on = life.aim === item.id;
+                      return (
+                        <Button
+                          key={item.id}
+                          variant="outline"
+                          aria-pressed={on}
+                          className={cn(
+                            "h-auto min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal",
+                            on && "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background",
+                          )}
+                          onClick={() => onAim(item.id)}
+                        >
+                          <span className="text-sm">{item.name}</span>
+                          <span className={cn("text-xs font-normal", on ? "text-background/80" : "text-muted-foreground")}>
+                            {item.up} {item.down}
+                          </span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="養身與靈石">
+                    {healthAim ? (
                       <Button
-                        key={item.id}
                         variant="outline"
-                        aria-pressed={on}
+                        aria-pressed={life.aim === "health"}
                         className={cn(
-                          "h-auto min-w-0 flex-col items-start px-3 py-2 text-left whitespace-normal",
-                          on && "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background",
+                          "h-auto min-w-0 flex-col items-start border-[#8a5a12] bg-[#f4e4c4] px-3 py-2 text-left whitespace-normal text-[#6b4510] hover:bg-[#ead6ae]",
+                          life.aim === "health" && "border-[#6b4510] bg-[#6b4510] text-[#f7f1e4] hover:bg-[#6b4510] hover:text-[#f7f1e4]",
                         )}
-                        onClick={() => onAim(item.id)}
+                        onClick={() => onAim("health")}
                       >
-                        <span className="text-sm">{item.name}</span>
-                        <span className={cn("text-xs font-normal", on ? "text-background/80" : "text-muted-foreground")}>
-                          {item.up} {item.down}
+                        <span className="text-sm">{healthAim.name}</span>
+                        <span className={cn("text-xs font-normal", life.aim === "health" ? "text-[#f7f1e4]/80" : "text-[#8a5a12]")}>
+                          花靈石強化
                         </span>
                       </Button>
-                    );
-                  })}
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col items-start px-3 py-2 text-left whitespace-normal"
-                    onClick={() => {
-                      setSpendOpen(true);
-                      if (!paused) onPause();
-                    }}
-                  >
-                    <span className="text-sm">靈石</span>
-                    <span className="text-xs font-normal text-muted-foreground">打開花費</span>
-                  </Button>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      className="h-auto flex-col items-start px-3 py-2 text-left whitespace-normal"
+                      onClick={() => {
+                        setSpendOpen(true);
+                        if (!paused) onPause();
+                      }}
+                    >
+                      <span className="text-sm">靈石 · 打開花費</span>
+                    </Button>
+                  </div>
                 </div>
                 {choice ? (
                   <p className="mt-2 text-sm leading-6 text-[#9c2f2a]">這一年停住了。選完才往下走。</p>
@@ -379,6 +415,10 @@ export function LifeView({
         </div>
 
         <aside className="flex min-w-0 flex-col gap-4">
+          <section className="border border-border bg-card p-4">
+            <h2 className="text-sm text-muted-foreground">宗門</h2>
+            <p className="mt-2 text-lg font-semibold">{sectStanding(life)}</p>
+          </section>
           <section className="border border-border bg-card p-4">
             <h2 className="text-sm text-muted-foreground">家人與生活</h2>
             <ul className="mt-3 flex flex-col text-sm leading-6">
@@ -525,15 +565,6 @@ function Meter({ label, value, text }: { label: string; value: number; text: str
       </div>
     </li>
   );
-}
-
-function familyTies(house: Household | null): { score: number; detail: string } {
-  if (!house) return { score: 0, detail: "還沒有家人" };
-  const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
-  const known = people.filter((kin) => kin.present || kin.dead || kin.away);
-  const home = known.filter((kin) => kin.present && !kin.dead && !kin.away);
-  const score = known.length === 0 ? 0 : Math.round((home.length / known.length) * 100);
-  return { score, detail: home.length === 0 ? "屋裡沒有別的人" : `${home.length} 人還在` };
 }
 
 function kinRows(house: Household | null, age: number): { name: string; who: string; doing: string }[] {

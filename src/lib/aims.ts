@@ -1,7 +1,7 @@
 import type { RealmId } from "@/lib/world";
 
 export type AimId = "cultivate" | "family" | "work" | "friends" | "health";
-export type SpendId = "home" | "pill" | "peer" | "job" | "propose" | "part";
+export type SpendId = "home" | "pill" | "peer" | "job" | "propose" | "part" | "manual";
 
 export type AimOption = {
   id: AimId;
@@ -62,6 +62,8 @@ export function spendOffers(input: {
   mortal: boolean;
   realm: RealmId;
   spouse: "none" | "here" | "apart";
+  learned?: string[];
+  manual?: string | null;
 }): SpendOffer[] {
   const pillIsLife = input.mortal || QI.has(input.realm);
   const offers: SpendOffer[] = [
@@ -106,6 +108,17 @@ export function spendOffers(input: {
       cost: 18,
       effect: "家人關係上升，配偶進門",
       record: "你提了親，人進了屋。",
+    });
+  }
+  const other = (input.learned ?? []).find((name) => name && name !== input.manual);
+  if (other && input.manual) {
+    offers.push({
+      id: "manual",
+      name: "改主修",
+      detail: `現在主修${input.manual}。花靈石，改成已經學過的${other}。`,
+      cost: 16,
+      effect: "主修功法換一部",
+      record: `你把主修改成${other}。`,
     });
   }
   if (input.spouse === "here") {

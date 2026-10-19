@@ -4,6 +4,17 @@ import type { AimId, SpendId } from "./aims";
 import { beginYearSlant, finishYearSlant, retargetAim, spendStone, toggleAutoSpend } from "./slant";
 import { humanName } from "./names";
 import {
+  deepestUnread,
+  insightGate,
+  SECT_AFFAIRS,
+  pickSectAffair,
+  progressGain,
+  progressLine,
+  startingManual,
+  type SectAffair,
+  type SectRank,
+} from "./persona";
+import {
   FOCUSES,
   MANUALS,
   NAMES,
@@ -113,10 +124,13 @@ export type Life = {
   heart: number;
   insight: number;
   bond: number;
+  fortune: number;
   stones: number;
   focus: FocusId;
   sect: string | null;
+  sectRank: SectRank | null;
   manual: string | null;
+  learned: string[];
   pillReady: boolean;
   relative: boolean;
   senior: boolean;
@@ -271,11 +285,14 @@ export function createLife(
     ling: clamp(42 + rng.next() * 18 + (root === "tian" ? 8 : root === "wei" ? -4 : 0)),
     heart: clamp(46 + rng.next() * 16),
     insight: clamp((living ? 30 : 22) + rng.next() * 12),
-    bond: clamp((living ? 32 : 20) + rng.next() * 10 + (relative ? 6 : 0)),
+    bond: clamp(26 + rng.next() * 48 + (relative ? 8 : 0)),
+    fortune: Math.round(clamp(30 + rng.next() * 50)),
     stones,
     focus: "cycle",
     sect: null,
+    sectRank: null,
     manual: null,
+    learned: [],
     pillReady: false,
     relative,
     senior: false,
@@ -336,6 +353,8 @@ export function createLife(
     life.stones += 36;
     life.manual = "族裡抄來的殘頁";
   }
+  if (story && !mortal && !life.manual) life.manual = startingManual(setup.seed || 1);
+  if (life.manual && !life.learned.includes(life.manual)) life.learned.push(life.manual);
   if (story && !mortal && originId === "remnant") {
     life.insight = clamp(life.insight + 8);
   }
@@ -644,6 +663,22 @@ function dueLegacy(life: Life, age: number): string | null {
   }
   if (life.buried && !life.seenEvents.includes("dig-past") && age === scheduled(seed, 0x43, 41, 8)) return "dig-past";
   if (life.heard && !life.seenEvents.includes("haunt-risk") && age === scheduled(seed, 0x44, 96, 8)) return "haunt-risk";
+  if (!life.mortal && life.revealed && !life.seenEvents.includes("breath-lesson") && age >= 11 && age <= 12) {
+    return "breath-lesson";
+  }
+  if (!life.mortal && life.revealed && !life.seenEvents.includes("insight-page") && age >= 13 && age <= 14) {
+    return "insight-page";
+  }
+  if (!life.mortal && life.revealed && !life.seenEvents.includes("fortune-pill") && age >= 15 && age <= 16) {
+    return "fortune-pill";
+  }
+  if (!life.mortal && life.revealed && !life.sect && life.sectRank !== "expelled" && !life.seenEvents.includes("sect-exam") && age >= 18 && age <= 19) {
+    return "sect-exam";
+  }
+  if (!life.mortal && life.revealed && !life.sect && life.sectRank !== "expelled" && !life.seenEvents.includes("sect-take") && age >= 20 && age <= 22) {
+    return "sect-take";
+  }
+  if (!life.mortal && !life.seenEvents.includes("bond-hand") && age >= 8 && age <= 10) return "bond-hand";
   return null;
 }
 
@@ -782,6 +817,21 @@ export function playStoryYear(life: Life): Life {
 
   const legacy = dueLegacy(draft, age);
   const two = rng.next() < 0.5;
+  if (legacy === "breath-lesson" || legacy === "insight-page" || legacy === "fortune-pill" || legacy === "bond-hand") {
+    draft.seenEvents.push(legacy);
+    const line =
+      legacy === "breath-lesson"
+        ? breathLesson(draft)
+        : legacy === "insight-page"
+          ? insightPage(draft)
+          : legacy === "fortune-pill"
+            ? fortunePill(draft)
+            : bondHand(draft);
+    pushYear(draft, line, "chapter");
+    draft.age += 1;
+    draft.years += 1;
+    return closeStoryYear(draft, rng, before);
+  }
   if (legacy) {
     if (two) {
       const home = pullHome(draft, age);
@@ -821,9 +871,28 @@ export function playStoryYear(life: Life): Life {
     draft.seenEvents.push("lifespan-mark");
   }
   const room = Math.max(0, cap - lines.length);
-  if (room > 0) {
+  if (room > 0 && !draft.mortal && draft.sect && draft.sectRank && draft.sectRank !== "expelled" && rng.next() < 0.8) {
+    const affair = pickSectAffair(draft.seenEvents, Math.floor(rng.next() * 1000), draft.learned.length, age);
+    if (affair) {
+      draft.seenEvents.push(affair.id);
+      if (affair.choices && lines.length < 2) {
+        draft.pending = {
+          type: "choice",
+          id: affair.id,
+          title: affair.title,
+          body: affair.text,
+          choices: affair.choices,
+        };
+        draft.yearOpen = true;
+      } else {
+        lines.push({ text: realizeSect(draft, rng, affair, "a"), kind: "chapter" });
+      }
+    }
+  }
+  const left = Math.max(0, cap - lines.length);
+  if (left > 0 && !draft.pending) {
     const allowChoice = rng.next() < (age < 12 ? 0.16 : 0.34);
-    let drawn = drawAffairs(draft, rng, age, room, allowChoice);
+    let drawn = drawAffairs(draft, rng, age, left, allowChoice);
     if (drawn.beats.length === 0 && !drawn.choice) {
       drawn = drawAffairs(draft, rng, age, room, true);
     }
@@ -844,14 +913,9 @@ export function playStoryYear(life: Life): Life {
       draft.yearOpen = true;
     }
   }
-  if (lines.length === 0 && !draft.pending) {
-    const lateId = `late-${age}`;
-    const home = draft.household && !draft.household.seen.includes(lateId)
-      ? commitHome(draft.household, lateId, homeCtx(draft, age))
-      : `${age}歲這一年，你還在。日子照舊過完。`;
-    lines.push({ text: home, kind: draft.household ? "home" : "chapter" });
+  for (const line of lines.slice(0, 2)) {
+    if (line.text) pushYear(draft, line.text, line.kind);
   }
-  for (const line of lines.slice(0, 2)) pushYear(draft, line.text, line.kind);
   if (!draft.pending) {
     draft.age += 1;
     draft.years += 1;
@@ -947,8 +1011,15 @@ function threadPending(life: Life, kind: ThreadKind): Pending {
   };
 }
 
+function dieBy(life: Life, line: string): void {
+  markDeath(life, line);
+  pushLog(life, "choice", line);
+}
+
 function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string): void {
   const hard = choiceId.endsWith(":b");
+  const who = life.thread?.name ?? "那個人";
+  const from = life.thread?.from ?? "上一世";
   life.thread = null;
   if (kind === "kin") {
     if (!hard) life.bond = clamp(life.bond + 8);
@@ -962,8 +1033,7 @@ function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string)
       return;
     }
     if (rng.next() < 0.08) {
-      markDeath(life, "跑的時候被債主波及");
-      pushLog(life, "choice", "你跑了，還是被債主波及。");
+      dieBy(life, `${who}拿著${from}留下的欠據堵在門口要你還錢，你轉身跑，還是被他從背後打中。`);
       return;
     }
     pushLog(life, "choice", "你跑了。債主沒有追上，這筆到此為止。");
@@ -992,8 +1062,7 @@ function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string)
   }
   if (kind === "cave") {
     if (hard && rng.next() < 0.4) {
-      markDeath(life, "上前爭奪，沒有回來");
-      pushLog(life, "choice", "你去奪洞。人沒有回來。");
+      dieBy(life, `${who}佔著${from}量過的那處洞，你上前去奪，人沒有走出洞口。`);
       return;
     }
     if (hard) {
@@ -1007,8 +1076,7 @@ function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string)
     return;
   }
   if (hard && rng.next() < 0.22) {
-    markDeath(life, "舊傷發作，沒有扛住");
-    pushLog(life, "choice", "你硬扛。舊傷把你帶走了。");
+    dieBy(life, `${from}那一世的舊傷這年發作，你硬扛，傷把你帶走了。`);
     return;
   }
   if (hard) {
@@ -1292,6 +1360,184 @@ function nextStoryId(life: Life): string | null {
   return candidates.find((id) => !life.seenEvents.includes(id)) ?? null;
 }
 
+function grantProgress(life: Life, raw: number): { crossed: boolean; realmName: string } {
+  const before = life.realm;
+  life.progress = Math.min(TUNING.progressCap, life.progress + progressGain(life, raw));
+  syncQiToProgress(life);
+  return { crossed: life.realm !== before, realmName: realmById(life.realm).name };
+}
+
+function rememberManual(life: Life, name: string): void {
+  if (!life.learned.includes(name)) life.learned.push(name);
+}
+
+function breathLesson(life: Life): string {
+  const moved = grantProgress(life, life.insight >= 48 ? 64 : 42);
+  life.insight = clamp(life.insight + 2);
+  if (life.insight >= 48) return `村裡的老人把吐納拆開講。你悟性夠，${progressLine("teach", moved)}`;
+  return `村裡的老人把吐納拆開講。你聽懂了一層，${progressLine("teach", moved)}`;
+}
+
+function insightPage(life: Life): string {
+  const name = deepestUnread(life.insight, life.learned, (life.setup.seed || 1) + life.age);
+  const need = insightGate(name);
+  const current = life.manual ?? "原來那一部";
+  if (life.insight < need) {
+    return `有人把《${name}》攤在桌上。悟性還不到，你看了幾頁，路走不進去。主修仍是${current}。`;
+  }
+  rememberManual(life, name);
+  life.manual = name;
+  life.insight = clamp(life.insight + 3);
+  const moved = grantProgress(life, 36);
+  return `有人把《${name}》攤在桌上。你悟性夠，把這一部看懂了，從今天起改作主修。${progressLine("page", moved)}`;
+}
+
+function fortunePill(life: Life): string {
+  if (life.fortune >= 55) {
+    const moved = grantProgress(life, 52);
+    life.stones += 18;
+    return `集上有人散丹。你運氣好，領到一顆。${progressLine("pill", moved)}`;
+  }
+  life.heart = clamp(life.heart - 1);
+  return "集上有人散丹。你排到跟前，丹已經發完，這一年修為沒有因它動。";
+}
+
+function bondHand(life: Life): string {
+  if (life.bond >= 40) {
+    life.stones += 8;
+    life.bond = clamp(life.bond + 2);
+    if (life.sect) {
+      const who = personName(life, 0x5c);
+      return `巷口有人搶袋子。師兄${who}擋了一下，搶的人退了，你的靈石還在。`;
+    }
+    const father = life.household?.father;
+    if (father && !father.dead) return `巷口有人搶袋子。父親${father.name}出來說了情，搶的人退了，你的靈石還在。`;
+    const peer = life.companions[0]?.name;
+    return peer
+      ? `巷口有人搶袋子。同輩${peer}拉了你一把，搶的人退了，你的靈石還在。`
+      : "巷口有人搶袋子。同輩拉了你一把，搶的人退了，你的靈石還在。";
+  }
+  life.stones = Math.max(0, life.stones - 12);
+  return "巷口有人搶袋子。沒有人認識你，沒有人出手，口袋少了十二塊。";
+}
+
+function joinSect(life: Life, sect: string, helped: boolean): void {
+  life.sect = sect;
+  life.sectRank = "outer";
+  life.bond = clamp(life.bond + 8);
+  life.stones += 24;
+  if (!life.manual) {
+    life.manual = startingManual(life.setup.seed || 1);
+    rememberManual(life, life.manual);
+  }
+  const who = helped
+    ? life.household?.father && !life.household.father.dead
+      ? `父親${life.household.father.name}出來說了情。`
+      : "有人替你說了情。"
+    : "";
+  pushLog(life, "choice", `${who}你的名字寫進了${sect}，身份是外門。主修仍是${life.manual}。`);
+}
+
+function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b"): string {
+  const gain = affair.gain;
+  if (gain === "lecture" || gain === "library" || gain === "pill" || gain === "page") {
+    const raw = gain === "lecture" ? 70 : gain === "page" ? 76 : gain === "library" ? 60 : 58;
+    const moved = grantProgress(life, life.fortune >= 62 ? raw + 12 : raw);
+    const line = progressLine(gain, moved);
+    return life.fortune >= 62 ? `${line}你運氣好，這一回比旁人厚。` : line;
+  }
+  if (gain === "teach") {
+    const name = deepestUnread(life.insight, life.learned, (life.setup.seed || 1) + 9);
+    const current = life.manual ?? "原來那一部";
+    if (life.insight < insightGate(name)) {
+      return `師兄把《${name}》攤開。悟性還不到，你看了幾頁，路走不進去。主修仍是${current}。`;
+    }
+    rememberManual(life, name);
+    const moved = grantProgress(life, 64);
+    return `師兄把《${name}》講通了。你悟性夠，這一部學會了，主修仍是${current}。${progressLine("teach", moved)}`;
+  }
+  if (gain === "mission") {
+    const pay = 28 + Math.round(rng.next() * 24) + (life.fortune >= 60 ? 12 : 0);
+    life.stones += pay;
+    return `你把宗門的貨催了回來，交了差，口袋多了${pay}塊靈石。`;
+  }
+  if (gain === "night") {
+    life.stones += 10;
+    return "你值了一夜。門沒出事，人累得早上才躺下，例錢還是到了。";
+  }
+  if (gain === "punish") {
+    if (life.bond >= 48) {
+      const father = life.household?.father;
+      const who = father && !father.dead ? `父親${father.name}出來說了情` : `師兄${personName(life, 0x5d)}擋了一下`;
+      life.stones = Math.max(0, life.stones - 4);
+      return `執事要罰你的月例。${who}，只扣了幾塊，人還留在門裡。`;
+    }
+    life.stones = Math.max(0, life.stones - 18);
+    return "執事罰了你的月例。沒有人開口，口袋薄了一截。";
+  }
+  if (gain === "merit") {
+    life.stones += 22;
+    life.bond = clamp(life.bond + 3);
+    if (life.sectRank === "watch" && life.insight >= 60 && life.fortune >= 60) {
+      life.sectRank = "inner";
+      return `功交上去，執事改了名冊。你進了${life.sect}內門，靈石也到了手。`;
+    }
+    return "你把功交上去，名冊上多了一筆，靈石也到了手。";
+  }
+  if (gain === "contest") {
+    if (which === "b") return "你沒有去爭那筆貢獻。名冊還是原來的樣子。";
+    if (rng.next() < 0.35 + life.fortune / 180) {
+      life.stones += 30;
+      life.bond = clamp(life.bond + 4);
+      return "貢獻爭到了你手上。你運氣好，執事點了你的名字。";
+    }
+    return "你去爭貢獻，名冊上寫的是別人。";
+  }
+  if (gain === "bully") {
+    if (life.bond >= 42) {
+      life.bond = clamp(life.bond + 2);
+      return `師兄${personName(life, 0x5e)}擋了一下，找麻煩的人退到廊外，你的袋子還在。`;
+    }
+    life.stones = Math.max(0, life.stones - 12);
+    life.scarred = true;
+    return "師兄沒有來。找麻煩的人按住你，袋子少了一截。";
+  }
+  if (gain === "trial") {
+    const moved = grantProgress(life, life.insight >= 48 ? 48 : 20);
+    if (life.sectRank === "outer" && life.insight >= 55) {
+      life.sectRank = "watch";
+      return `外門比試你撐到最後。執事讓你留下值守。${progressLine("teach", moved)}`;
+    }
+    if (life.insight >= 48) return `外門比試你進了後一輪。${progressLine("teach", moved)}`;
+    return `外門比試你進了場。悟性還淺，只看懂了幾招。${progressLine("teach", moved)}`;
+  }
+  if (gain === "keep") {
+    if (which === "b") return "你沒有留下。外門的日子照舊。";
+    life.sectRank = life.sectRank === "inner" ? "inner" : "watch";
+    life.stones += 12;
+    return `執事把你留下值守。從今天起，你在${life.sect}做值守。`;
+  }
+  if (gain === "dismiss") {
+    if (which === "a" && life.bond >= 50) {
+      const father = life.household?.father;
+      const who = father && !father.dead ? `父親${father.name}` : "家裡人";
+      return `${who}說了情，執事改了口，你還留在${life.sect}外門。`;
+    }
+    life.sect = null;
+    life.sectRank = "expelled";
+    return "執事把你打發走了。名冊上沒有你，人還在。";
+  }
+  if (gain === "switch") {
+    const next = life.learned.find((name) => name !== life.manual);
+    const current = life.manual ?? "原來那一部";
+    if (which === "b" || !next) return `你把新的先記著。主修仍是${current}。`;
+    if (life.insight < insightGate(next)) return `你想改主修《${next}》。悟性還不到，這一部練不穩。主修仍是${current}。`;
+    life.manual = next;
+    return `你把主修改成${next}。從今天起練這一部。`;
+  }
+  return affair.text;
+}
+
 function resolveChoice(life: Life, rng: Rng, pendingId: string, choiceId: string): void {
   if (pendingId.startsWith("gate-")) {
     resolveGate(life, rng, pendingId.slice(5) as GateId, choiceId);
@@ -1299,6 +1545,12 @@ function resolveChoice(life: Life, rng: Rng, pendingId: string, choiceId: string
   }
   if (pendingId.startsWith("thread-")) {
     resolveThread(life, rng, pendingId.slice(7) as ThreadKind, choiceId);
+    return;
+  }
+  const knownSect = SECT_AFFAIRS.find((item) => item.id === pendingId);
+  if (knownSect) {
+    const which = choiceId.endsWith(":b") ? "b" : "a";
+    pushLog(life, "choice", realizeSect(life, rng, knownSect, which));
     return;
   }
   const affair = AFFAIRS.find((item) => item.id === pendingId);
@@ -1583,21 +1835,37 @@ const EVENTS: LifeEvent[] = [
       chance *= WORLDS[life.setup.world].gate;
       if (life.relative) chance += 0.12;
       chance = clamp(chance, 0.03, 0.88);
-      if (rng.next() < chance) {
-        life.sect = sect;
-        life.bond = clamp(life.bond + 12);
-        life.insight = clamp(life.insight + 8);
-        life.stones += 24;
-        life.manual = life.manual ?? pickStable(life, MANUALS);
-        pushLog(
-          life,
-          "choice",
-          `你進了${sect}外門。每年有一點靈石，也有一部${life.manual}可以看。修為這一年幾乎沒動。`,
-        );
+      chance *= 0.75 + life.fortune / 160;
+      const roll = rng.next();
+      const helped = roll >= chance && life.bond >= 58;
+      if (roll < chance || helped) {
+        joinSect(life, sect, helped);
         return;
       }
-      life.heart = clamp(life.heart - 7);
-      pushLog(life, "choice", `榜上沒有你。${sect}的名額滿了。你回到原來的地方，心境沉了一截。`);
+      life.heart = clamp(life.heart - 4);
+      pushLog(life, "choice", `榜上沒有你。${sect}的名額滿了。你回到原來的地方。`);
+    },
+  },
+  {
+    id: "sect-take",
+    story: true,
+    when: () => false,
+    make: (life) => ({
+      type: "choice",
+      id: "sect-take",
+      title: "外門缺人",
+      body: `${pickStable(life, SECTS)}外門缺一個跑腿的。不去考，去做事也能上名冊。`,
+      choices: [
+        { id: "sect-take:go", label: "去做事", hint: "外門從今天算起。" },
+        { id: "sect-take:steady", label: "不去", hint: "仍是尚未入門。" },
+      ],
+    }),
+    resolve: (life, _rng, choiceId) => {
+      if (!choiceId.endsWith(":go")) {
+        pushLog(life, "choice", "你沒有去。名冊上沒有你，人還在原來的地方。");
+        return;
+      }
+      joinSect(life, pickStable(life, SECTS), false);
     },
   },
   {
@@ -1666,8 +1934,7 @@ const EVENTS: LifeEvent[] = [
         return;
       }
       life.ling = clamp(life.ling - 20);
-      markDeath(life, "秘境裡沒有走出來");
-      pushLog(life, "choice", "縫口合上的時候，你不在外面。這一世停在秘境裡。");
+      dieBy(life, "你擠進秘境搶那條縫，縫口合上的時候你還在裡面。");
     },
   },
   {
@@ -2069,8 +2336,12 @@ const EVENTS: LifeEvent[] = [
       const dieAt = fight ? 0.55 : 0.22;
       if (rng.next() < dieAt) {
         if (fight) noteGrudge(life, keeper);
-        markDeath(life, fight ? "爐火收口，你撞上去沒有出來" : "爐火收口，你沒有跑出去");
-        pushLog(life, "choice", fight ? `你撞上去。${keeper}還活著，爐火先收了你。` : "你跑了。爐火還是先收了口。");
+        dieBy(
+          life,
+          fight
+            ? `${keeper}守著丹爐按時收口，你撞上去，爐火先把你收進去。`
+            : `${keeper}守著丹爐按時收口，你往外跑，爐火還是先合上。`,
+        );
         return;
       }
       life.escaped = true;
@@ -2109,8 +2380,7 @@ const EVENTS: LifeEvent[] = [
       if (choiceId.endsWith(":elder")) {
         const roll = rng.next();
         if (roll < 0.12) {
-          markDeath(life, "上前爭奪，長輩沒有趕上");
-          pushLog(life, "choice", "你叫了長輩。人沒有趕到，你留在那堆東西旁邊。");
+          dieBy(life, "路上有人搶掉在地上的東西，你叫了家族長輩，人沒有趕到，你留在那堆東西旁邊。");
           return;
         }
         if (roll < 0.28) {
@@ -2124,8 +2394,7 @@ const EVENTS: LifeEvent[] = [
       }
       if (choiceId.endsWith(":run")) {
         if (rng.next() < 0.08) {
-          markDeath(life, "跑的時候還是被波及");
-          pushLog(life, "choice", "你轉身就跑。還是有一下砸到背上。人沒有離開那條路。");
+          dieBy(life, "路上有人搶掉在地上的東西，你轉身跑，背上還是挨了一下，人留在那條路上。");
           return;
         }
         life.stones = Math.max(0, life.stones - 2);
@@ -2138,8 +2407,7 @@ const EVENTS: LifeEvent[] = [
       const roll = rng.next();
       if (roll < harsh) {
         noteGrudge(life, rival);
-        markDeath(life, `上前爭奪，${rival}還活著，你沒有回來`);
-        pushLog(life, "choice", `你上前。${rival}還活著，你沒有回來。`);
+        dieBy(life, `${rival}在路上搶掉在地上的東西，你上前去奪，人留在他面前。`);
         return;
       }
       if (roll < harsh + 0.33) {
@@ -2207,8 +2475,7 @@ const EVENTS: LifeEvent[] = [
     resolve: (life, rng, choiceId) => {
       if (choiceId.endsWith(":run")) {
         if (rng.next() < 0.06) {
-          markDeath(life, "上前爭奪，追出來的人沒有留手");
-          pushLog(life, "choice", "你跑出院子。追出來的人沒有留手。");
+          dieBy(life, "你跑出家族的院子，收帳的人在門口追上，刀落在背上。");
           return;
         }
         life.bond = clamp(life.bond - 10);
@@ -2219,8 +2486,7 @@ const EVENTS: LifeEvent[] = [
         const kin = personName(life, 0x73);
         if (rng.next() < 0.48) {
           noteGrudge(life, kin);
-          markDeath(life, `上前爭奪，${kin}還活著，家族沒有讓你走`);
-          pushLog(life, "choice", `你去搶帳本。${kin}還活著，你沒有走出那道門。`);
+          dieBy(life, `你去搶族裡的帳本，${kin}還守在門口，你沒有走出那道門。`);
           return;
         }
         life.ling = clamp(life.ling - 8);
@@ -2338,16 +2604,14 @@ const EVENTS: LifeEvent[] = [
       life.foe = null;
       if (choiceId.endsWith(":run")) {
         if (rng.next() < 0.08) {
-          markDeath(life, `跑的時候被${name}波及`);
-          pushLog(life, "choice", `你跑了。${name}還是砸到一下。人沒有離開。`);
+          dieBy(life, `${name}堵在路上要算上一世的帳，你轉身跑，還是被他砸中。`);
           return;
         }
         pushLog(life, "choice", `你跑了。${name}沒有追上來，人還在。這一遇到此為止。`);
         return;
       }
       if (rng.next() < 0.62) {
-        markDeath(life, `對上${name}，沒有回來`);
-        pushLog(life, "choice", `你對上${name}。人留在那條路上。`);
+        dieBy(life, `你在路上對上${name}，要算上一世沒打完的那一架，人留在他面前。`);
         return;
       }
       life.ling = clamp(life.ling - 8);
@@ -2443,12 +2707,7 @@ export function epitaph(life: Life): string {
   if (life.ending === "edge") return "這一層走到頭了，人還在";
   if (/奪舍/.test(life.cause)) return "身體還在，人被奪舍";
   if (/對上/.test(life.cause)) return "前世的人還在路上";
-  if (/爭奪/.test(life.cause)) return "東西還在路上，人沒有回來";
-  if (/跑的時候/.test(life.cause)) return "跑了，還是沒有跑出那一擊";
-  if (/爐/.test(life.cause)) return "爐火按時收口";
-  if (/走火/.test(life.cause)) return "心境裂開的那一下，人就不在了";
-  if (/秘境/.test(life.cause)) return "縫口合上的時候，外面沒有你";
-  if (/壽元/.test(life.cause)) return "壽元先到，路沒有再長";
+  if (life.cause) return life.cause;
   return "這一世停在這裡";
 }
 
