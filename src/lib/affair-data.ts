@@ -1241,7 +1241,7 @@ export const AFFAIRS: readonly Affair[] = [
       },
       {
         "label": "上前爭奪",
-        "line": "你跟他們爭爐是藥爐。推搡裡你的手被門夾了，爐還是封了。"
+        "line": "你上前說這是藥爐。推搡裡手被門夾了，爐還是封了。"
       }
     ]
   },
@@ -2004,7 +2004,7 @@ export const AFFAIRS: readonly Affair[] = [
     "origin": null,
     "root": null,
     "title": "你把鞋帶系緊再走路",
-    "text": "小事。你開始在出門前檢查自己，不等人提醒。",
+    "text": "你開始在出門前檢查自己，不等人提醒。",
     "choices": []
   },
   {
@@ -2337,7 +2337,7 @@ export const AFFAIRS: readonly Affair[] = [
     "origin": null,
     "root": null,
     "title": "你行功時看見自己的臉老了十歲",
-    "text": "不是鏡子，是氣海里的一個影子。你可以停，也可以看完。",
+    "text": "不是鏡子，是氣海裡的一個影子。你可以停，也可以看完。",
     "choices": [
       {
         "label": "停",
@@ -3603,7 +3603,7 @@ export const AFFAIRS: readonly Affair[] = [
     "origin": null,
     "root": null,
     "title": "你把洞裡的燈芯剪短省油",
-    "text": "小事。你還在計較這些，說明你還打算活過這個月。",
+    "text": "你還在計較這些，說明你還打算活過這個月。",
     "choices": []
   },
   {
@@ -3981,7 +3981,7 @@ export const AFFAIRS: readonly Affair[] = [
     "origin": null,
     "root": null,
     "title": "你在這一輪的盡頭附近仍然把鞋子放正",
-    "text": "小事。你還在把自己的東西放好。人在這裡。",
+    "text": "你還在把自己的東西放好。人在這裡。",
     "choices": []
   }
 ];

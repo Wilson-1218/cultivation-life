@@ -304,7 +304,7 @@ export function LifeView({
                   <ul className="mt-3 flex flex-col gap-3">
                     {life.yearLines.map((line, index) => (
                       <li key={`${age}-${index}`} className="break-words text-lg leading-8">
-                        {line}
+                        {withoutRepeatedAge(line, age)}
                       </li>
                     ))}
                   </ul>
@@ -396,7 +396,7 @@ export function LifeView({
                       {passageMark(entry.text) ? (
                         <Mark name={passageMark(entry.text)!} className="mr-1.5 align-[-0.15em]" />
                       ) : null}
-                      {entry.text}
+                      {withoutRepeatedAge(entry.text, entry.age)}
                     </p>
                     <Button
                       variant="ghost"
@@ -550,6 +550,10 @@ export function LifeView({
       </Dialog>
     </div>
   );
+}
+
+function withoutRepeatedAge(text: string, age: number): string {
+  return text.replace(new RegExp(`^${age}歲[，。]\\s*`), "");
 }
 
 function Meter({ label, value, text }: { label: string; value: number; text: string }) {

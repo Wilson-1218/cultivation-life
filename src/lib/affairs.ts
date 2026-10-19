@@ -2,6 +2,7 @@ import { AFFAIRS, type Affair } from "@/lib/affair-data";
 import { bindHousehold, householdBlocks, type Household } from "@/lib/household";
 
 export { AFFAIRS };
+import { deepestUnread, insightGate } from "@/lib/persona";
 import { SECTS, type OriginId, type RootId } from "@/lib/world";
 
 type Rng = { next: () => number };
@@ -176,7 +177,7 @@ const ROAD_DEATH: Record<string, { run: string; fight: string; elder: string }> 
     elder: "三個人圍住你的包袱，說孤兒的東西不算搶，你叫了家族長輩，人沒趕到，你被按住。",
   },
   a195: {
-    run: "族裡管事來收旁系的份子，你離開族地，追出來的人沒有留手。",
+    run: "族裡管事來收旁系的份子，你離開族地，追出來的人在祠堂門口把你砍倒。",
     fight: "族裡管事來收旁系的份子，你當眾頂他，人沒有走出祠堂。",
     elder: "族裡管事來收旁系的份子，你叫了家族長輩，人沒趕到，你留在祠堂門口。",
   },
@@ -192,11 +193,12 @@ const ROAD_DEATH: Record<string, { run: string; fight: string; elder: string }> 
   },
 };
 
-function helpedLine(life: AffairHost): string {
-  if (life.sect) return "師兄擋了一下，這一擊沒有全落在你身上，人還站著。";
+function helpedLine(life: AffairHost, affair: Affair): string {
+  const scene = affair.text.replace(/。$/, "");
+  if (life.sect) return `${scene}。師兄擋了一下，這一擊沒有全落在你身上，人還站著。`;
   const father = life.household?.father;
-  if (father && !father.dead) return `父親${father.name}出來說了情，事情輕了一截，人還在。`;
-  return "同輩拉了你一把，人還站著。";
+  if (father && !father.dead) return `${scene}。父親${father.name}出來說了情，事情輕了一截，人還在。`;
+  return `${scene}。同輩拉了你一把，人還站著。`;
 }
 
 function roadDeath(affair: Affair, which: "a" | "b" | "elder"): string {
@@ -220,7 +222,7 @@ export function resolveAffair(
     const dieAt = (which === "b" ? 0.42 : which === "elder" ? 0.12 : 0.08) * (1.2 - fortune / 100);
     if ((life.bond ?? 0) >= 46 && rng.next() < (life.bond - 30) / 90) {
       if (which === "b") life.scarred = true;
-      return { line: helpedLine(life), die: false, cause: "", grudge: false };
+      return { line: helpedLine(life, affair), die: false, cause: "", grudge: false };
     }
     if (rng.next() < dieAt) {
       const line = roadDeath(affair, which);
@@ -229,7 +231,12 @@ export function resolveAffair(
     if (which === "b") life.scarred = true;
     if (which === "elder") {
       life.heart = clamp(life.heart - 2);
-      return { line: "你叫了家族長輩。人到了，東西沒有全到手，你還在。", die: false, cause: "", grudge: false };
+      return {
+        line: `${affair.text.replace(/。$/, "")}。你叫了家族長輩，人到了，東西沒有全到手，你還在。`,
+        die: false,
+        cause: "",
+        grudge: false,
+      };
     }
     const chosen = affair.choices[which === "b" ? 1 : 0];
     return { line: chosen?.line ?? "這一年過去了。", die: false, cause: "", grudge: which === "b" };
@@ -237,18 +244,35 @@ export function resolveAffair(
   const index = which === "b" ? 1 : 0;
   const chosen = affair.choices[index];
   if (index === 0) {
-    if (affair.shape === "sect" && !life.sect) {
+    if (affair.shape === "sect" && !life.sect && /寫上名字|你掛了|排到了|掃了一年/.test(chosen?.line ?? "")) {
       const salt = [...(life.household?.hamlet ?? life.originId)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
       life.sect = SECTS[salt % SECTS.length] ?? "青汀門";
       life.sectRank = life.sectRank ?? "outer";
     }
     if (affair.shape === "owe") life.owed = true;
     if (affair.shape === "page") {
-      const title = affair.title;
-      if (!life.learned) life.learned = [];
-      if (!life.learned.includes(title)) life.learned.push(title);
-      life.manual = life.manual ?? title;
       life.learnedPage = true;
+      const learned = life.learned ?? [];
+      const salt = [...(life.manual ?? affair.id)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+      const offered = deepestUnread(life.insight, learned, salt);
+      const current = life.manual ?? "原來那一部";
+      if (life.insight < insightGate(offered)) {
+        return {
+          line: `你把《${offered}》拿在手裡。悟性還不到，一句也練不進去。主修仍是${current}。`,
+          die: false,
+          cause: "",
+          grudge: false,
+        };
+      }
+      if (!life.learned) life.learned = [];
+      if (!life.learned.includes(offered)) life.learned.push(offered);
+      if (!life.manual) life.manual = offered;
+      return {
+        line: `你把《${offered}》看懂了，先記在旁邊。主修仍是${life.manual}。`,
+        die: false,
+        cause: "",
+        grudge: false,
+      };
     }
     if (affair.shape === "help") life.saved = true;
     if (affair.shape === "cave") life.hadCave = true;

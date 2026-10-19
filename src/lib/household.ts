@@ -115,9 +115,9 @@ const ORIGIN_POSTS: Record<OriginId, { job: string; slot: PlaceSlot }[]> = {
 
 const SECT_POSTS: { job: string; slot: PlaceSlot }[] = [
   { job: "值守", slot: "sect" },
-  { job: "照料外門藥園", slot: "garden" },
+  { job: "照看藥草", slot: "garden" },
   { job: "做護院", slot: "sect" },
-  { job: "當管事", slot: "sect" },
+  { job: "幫著管事", slot: "sect" },
 ];
 
 const HIGH_POSTS: { job: string; slot: PlaceSlot }[] = [
@@ -155,8 +155,14 @@ function locate(house: Household, ctx: HomeContext, slot: PlaceSlot): string {
   if (slot === "market") return house.market;
   if (slot === "yard") return house.yard;
   if (slot === "road") return `${house.hamlet}到${house.market}的路`;
-  if (slot === "garden") return ctx.sect ? `${ctx.sect}藥園` : house.yard;
-  return ctx.sect ? `${ctx.sect}外院` : house.yard;
+  if (slot === "garden") return ctx.sect ? `${ctx.sect}的藥園` : house.yard;
+  return ctx.sect ? `${ctx.sect}裡` : house.yard;
+}
+
+function postPhrase(place: string, job: string): string {
+  if (!place) return job;
+  if (place.endsWith(job)) return place;
+  return `${place}${job}`;
 }
 
 function desired(house: Household, ctx: HomeContext): { job: string; place: string; tier: Household["jobTier"] } {
@@ -206,7 +212,7 @@ export function buildHousehold(input: {
   const seed = input.seed || 1;
   const surname = input.name.slice(0, 1) || "陳";
   const avoid = new Set<string>([input.name]);
-  const hamlet = pickFrom(PLACE_POOL.filter((item) => /[村鎮縣]$/.test(item)), seed, 0x31);
+  const hamlet = pickFrom(PLACE_POOL.filter((item) => /[村鎮]$/.test(item)), seed, 0x31);
   const river = pickFrom(PLACE_POOL.filter((item) => /[河溪溝灘渡]$/.test(item)), seed, 0x32);
   const mountain = pickFrom(PLACE_POOL.filter((item) => /[山嶺澗]$/.test(item)), seed, 0x33);
   const market = pickFrom(PLACE_POOL.filter((item) => item.endsWith("坊")), seed, 0x34);
@@ -233,7 +239,7 @@ export function buildHousehold(input: {
       blankKin("child", kinName(seed, 0x48, surname, childCall2 === "兒子" ? "m" : "f", avoid, "child"), childCall2, false, 0),
     );
   }
-  const kinTrades = ["種田", "打魚", "做護院", "看攤", "跑腿", "采藥", "幫廚", "守門", "縫補", "趕車", "寫帳", "搬貨"].filter(
+  const kinTrades = ["種田", "打魚", "做護院", "看攤", "跑腿", "採藥", "幫廚", "守門", "縫補", "趕車", "寫帳", "搬貨"].filter(
     (item) => item !== originPost.job,
   );
   const tradeAt = mix(seed, 0x91) % kinTrades.length;
@@ -374,7 +380,7 @@ function syncJob(house: Household, ctx: HomeContext): string | null {
   house.job = next.job;
   house.jobPlace = next.place;
   house.jobTier = next.tier;
-  return `${ctx.age}歲，你不再天天${previous}，改去${next.place}${next.job}。${house.hamlet}的屋子還在。${atHome(house)}。`;
+  return `${ctx.age}歲，你不做${previous}了，以後在${postPhrase(next.place, next.job)}。`;
 }
 
 function goneClause(house: Household): string {
@@ -385,9 +391,7 @@ function goneClause(house: Household): string {
 }
 
 function workLine(house: Household, ctx: HomeContext): string {
-  const changed = syncJob(house, ctx);
-  if (changed) return `${changed}${goneClause(house)}${memoryClause(house, ctx.age)}`;
-  return goneClause(house);
+  return syncJob(house, ctx) ?? "";
 }
 
 function parentOf(house: Household, who: "father" | "mother"): Kin {
@@ -412,7 +416,8 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，你生在${house.region}的${house.hamlet}。母親${house.mother.name}把你抱進門，父親${house.father.name}在${house.home}裡等著。${older.call}${older.name}已經會走路。`;
   }
   if (id === "father") {
-    return `${ctx.age}歲，父親${house.father.name}在${house.jobPlace}${house.job}。你跟著走到${house.hamlet}口，晚上還是回${house.home}。`;
+    if (house.father.dead) return "";
+    return `${ctx.age}歲，你跟著父親${house.father.name}出去做事，天黑兩人才回家。`;
   }
   if (id === "sibling") {
     younger.present = true;
@@ -441,20 +446,24 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
   if (id === "job") {
     house.jobSince = ctx.age;
     syncJob(house, ctx);
-    return `${ctx.age}歲，從這一年起，你在${house.jobPlace}${house.job}。${house.hamlet}的屋子還在，${atHome(house)}。`;
+    return `${ctx.age}歲，從這一年起，你在${postPhrase(house.jobPlace, house.job)}。`;
   }
   if (id === "craft") {
-    remember(house, `父親${house.father.name}傳過${craftNoun(house.job)}`);
-    return `${ctx.age}歲，父親${house.father.name}把${craftNoun(house.job)}傳給你。你在${house.jobPlace}照著做了一遍。`;
+    const craft = craftNoun(house.job);
+    remember(house, `父親${house.father.name}傳過${craft}`);
+    if (house.father.dead) return `${ctx.age}歲，你把${craft}又練了一遍。父親${house.father.name}已經不在，這是他留下的。`;
+    return `${ctx.age}歲，父親${house.father.name}把${craft}傳給你，你當面做了一遍。`;
   }
   if (id === "festival") {
-    remember(house, `節日回過${house.home}`);
-    return `${ctx.age}歲，節日你從${house.jobPlace}回到${house.home}。父親${house.father.name}、母親${house.mother.name}都在，${house.market}也歇了。`;
+    remember(house, `節日回過家`);
+    const here = [house.father, house.mother].filter((kin) => kin.present && !kin.dead);
+    const who = here.length > 0 ? `${here.map((kin) => `${kin.call}${kin.name}`).join("和")}都在。` : "";
+    return `${ctx.age}歲，${house.market}過節，你回了家。${who}`;
   }
   if (id === "aging") {
     const father = house.father.dead ? `父親${house.father.name}已經不在` : `父親${house.father.name}的背彎了`;
     const mother = house.mother.dead ? `母親${house.mother.name}已經不在` : `母親${house.mother.name}的頭髮白了`;
-    return `${ctx.age}歲，${father}，${mother}。你仍在${house.jobPlace}${house.job}。${memoryClause(house, ctx.age)}`;
+    return `${ctx.age}歲，${father}，${mother}。`;
   }
   if (id === "marry") {
     if (house.spouse.present) {
@@ -477,7 +486,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，你和${call}${who}和好了。${house.home}重新一起吃飯。`;
   }
   if (id === "settle") {
-    return `${ctx.age}歲，${house.spouse.name}把${house.home}收過。你白天仍去${house.jobPlace}${house.job}。屋子還在。`;
+    return `${ctx.age}歲，${house.spouse.name}把屋子收拾過。你回來的時候，飯還是熱的。`;
   }
   if (id === "aid") {
     const who = presentSibling(house, 0);
@@ -497,7 +506,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，${child.call}${child.name}在${house.yard}認字，一筆一筆寫自己的名字。你在旁邊看著。`;
   }
   if (id === "grow") {
-    return `${ctx.age}歲，${child.call}${child.name}長大了，會自己走到${house.hamlet}口。你還在${house.jobPlace}${house.job}。`;
+    return `${ctx.age}歲，${child.call}${child.name}長大了，會自己走到${house.hamlet}口。`;
   }
   if (id === "split") {
     const who = presentSibling(house, 0);
@@ -512,7 +521,9 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     return `${ctx.age}歲，${who.call}${who.name}說去${house.river}看船，船翻了，人沒有再上岸。`;
   }
   if (id === "childwork") {
-    return `${ctx.age}歲，${child.call}${child.name}也開始做事。你仍在${house.jobPlace}${house.job}，屋子裡要養的人換了一輪。${memoryClause(house, ctx.age)}`;
+    const years = Math.max(0, ctx.age - child.born);
+    if (years < 16) return `${ctx.age}歲，${child.call}${child.name}還小，還沒獨立做事。`;
+    return `${ctx.age}歲，${child.call}${child.name}開始自己找活做。`;
   }
   if (id === "childmarry") {
     const verb = child.call === "兒子" ? "娶了" : "嫁給";
@@ -524,7 +535,7 @@ export function commitHome(house: Household, id: string, ctx: HomeContext): stri
     if (id.endsWith("-ill")) {
       who.sick = true;
       remember(house, `${who.call}${who.name}病過`);
-      return `${ctx.age}歲，${who.call}${who.name}病了。你從${house.jobPlace}趕回到${house.home}，人還認得出你。`;
+      return `${ctx.age}歲，${who.call}${who.name}病了。你趕回家，人還認得出你。`;
     }
     who.dead = true;
     who.sick = false;
@@ -682,7 +693,7 @@ export function kinDoing(kin: Kin, house: Household, age: number): string {
     return `${Math.max(0, age - kin.born)}歲，在${house.home}`;
   }
   if (kin.role === "spouse") return `在${house.home}裡`;
-  if (house.seen.includes("job")) return `在${house.hamlet}，你從${house.jobPlace}回來還見得到`;
+  if (house.seen.includes("job")) return `人在${house.home}`;
   return `在${house.home}裡`;
 }
 
@@ -707,7 +718,7 @@ export function shiftLivelihood(house: Household): string {
     house.sectJob = next.job;
     house.sectSlot = next.slot;
     house.job = next.job;
-    house.jobPlace = locate(house, { ...calm, mortal: false, sect: "門中" }, next.slot);
+    house.jobPlace = locate(house, { ...calm, mortal: false, sect: null }, next.slot);
   } else {
     const posts = ORIGIN_POSTS[house.originId].filter((item) => item.job !== house.originJob);
     const next = posts[house.memories.length % Math.max(1, posts.length)] ?? ORIGIN_POSTS[house.originId][0]!;
@@ -718,7 +729,7 @@ export function shiftLivelihood(house: Household): string {
     house.jobPlace = locate(house, calm, next.slot);
   }
   if (!house.seen.includes("job")) house.seen.push("job");
-  return `你不去${previous}了，改到${house.jobPlace}${house.job}。${house.hamlet}的屋子還留著。`;
+  return `你不做${previous}了，改做${house.job}。`;
 }
 
 export function bindHousehold(text: string, house: Household | null | undefined): string {
@@ -735,7 +746,8 @@ export function bindHousehold(text: string, house: Household | null | undefined)
     if (!kin) continue;
     stamp(call, kin.name);
   }
-  out = out.replaceAll("坊市", house.market);
-  out = out.replaceAll("村口", `${house.hamlet}口`);
+  if (!out.includes(house.market)) out = out.replaceAll("坊市", house.market);
+  const stem = house.hamlet.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  out = out.replace(new RegExp(`(?<!${stem})村口`, "g"), `${house.hamlet}口`);
   return out;
 }

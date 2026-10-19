@@ -246,8 +246,8 @@ function familyStory(house: Household | null): string {
   const gone = known.filter((kin) => kin.dead);
   const parts: string[] = [];
   if (children.length > 0) parts.push(`子女${children.map((kin) => kin.name).join("、")}`);
-  if (home.length > 0) parts.push(`還在${home.map((kin) => kin.name).join("、")}`);
-  if (gone.length > 0) parts.push(`先走${gone.map((kin) => kin.name).join("、")}`);
+  if (home.length > 0) parts.push(`還在的有${home.map((kin) => kin.name).join("、")}`);
+  if (gone.length > 0) parts.push(`先走的有${gone.map((kin) => kin.name).join("、")}`);
   return parts.join("，") || "沒有寫上";
 }
 

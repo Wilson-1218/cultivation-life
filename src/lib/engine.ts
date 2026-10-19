@@ -16,7 +16,6 @@ import {
 } from "./persona";
 import {
   FOCUSES,
-  MANUALS,
   NAMES,
   ORIGINS,
   PACES,
@@ -351,7 +350,6 @@ export function createLife(
   }
   if (story && !mortal && originId === "clan") {
     life.stones += 36;
-    life.manual = "族裡抄來的殘頁";
   }
   if (story && !mortal && !life.manual) life.manual = startingManual(setup.seed || 1);
   if (life.manual && !life.learned.includes(life.manual)) life.learned.push(life.manual);
@@ -1042,9 +1040,8 @@ function resolveThread(life: Life, rng: Rng, kind: ThreadKind, choiceId: string)
   if (kind === "page") {
     if (!hard) {
       life.insight = clamp(life.insight + 6);
-      life.manual = life.manual ?? "前世殘頁";
       life.learnedPage = true;
-      pushLog(life, "choice", "你收下那半頁。見識厚了一點，頁子不再出現。");
+      pushLog(life, "choice", "你收下那半頁。字認了一半，主修沒有換。");
       return;
     }
     pushLog(life, "choice", "你把那半頁燒了。沒有留下。");
@@ -1150,7 +1147,7 @@ function stepYear(life: Life, rng: Rng, notes: string[]): StepResult {
     if (life.heart < 14 && rng.next() < 0.4) {
       life.age += 1;
       life.years += 1;
-      markDeath(life, "走火，心境沒有撐住");
+      markDeath(life, "閉關時靈氣亂了，你沒有出得了關");
       return "dead";
     }
   }
@@ -1443,8 +1440,16 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
   if (gain === "lecture" || gain === "library" || gain === "pill" || gain === "page") {
     const raw = gain === "lecture" ? 70 : gain === "page" ? 76 : gain === "library" ? 60 : 58;
     const moved = grantProgress(life, life.fortune >= 62 ? raw + 12 : raw);
-    const line = progressLine(gain, moved);
-    return life.fortune >= 62 ? `${line}你運氣好，這一回比旁人厚。` : line;
+    const head =
+      gain === "lecture"
+        ? "這一堂講道聽完，"
+        : gain === "library"
+          ? "你在藏經閣坐了一晚，"
+          : gain === "pill"
+            ? "宗門發的丹見了效，"
+            : "秘境帶回來的殘頁，你走通了一段，";
+    const line = `${head}${progressLine(gain, moved)}`;
+    return life.fortune >= 62 ? `${line}你運氣好，這一回比旁人多進了一截。` : line;
   }
   if (gain === "teach") {
     const name = deepestUnread(life.insight, life.learned, (life.setup.seed || 1) + 9);
@@ -1480,7 +1485,7 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
     life.bond = clamp(life.bond + 3);
     if (life.sectRank === "watch" && life.insight >= 60 && life.fortune >= 60) {
       life.sectRank = "inner";
-      return `功交上去，執事改了名冊。你進了${life.sect}內門，靈石也到了手。`;
+      return `功交上去，執事改了名冊。你進了${life.sect}的內門，靈石也到了手。`;
     }
     return "你把功交上去，名冊上多了一筆，靈石也到了手。";
   }
@@ -1521,7 +1526,8 @@ function realizeSect(life: Life, rng: Rng, affair: SectAffair, which: "a" | "b")
     if (which === "a" && life.bond >= 50) {
       const father = life.household?.father;
       const who = father && !father.dead ? `父親${father.name}` : "家裡人";
-      return `${who}說了情，執事改了口，你還留在${life.sect}外門。`;
+      const door = life.sect?.endsWith("外門") ? life.sect : `${life.sect}外門`;
+      return `${who}說了情，執事改了口，你還留在${door}。`;
     }
     life.sect = null;
     life.sectRank = "expelled";
@@ -1616,12 +1622,9 @@ function resolveGate(life: Life, rng: Rng, kind: GateId, choiceId: string): void
   life.gateLockUntil = life.age + 5;
   const fatal = rng.next() < (life.heart < 28 ? 0.16 : 0.07);
   if (fatal) {
-    markDeath(life, "突破失敗，靈力潰散");
-    pushLog(
-      life,
-      "choice",
-      `${label}失敗，靈力沒有收回來。花掉的 ${formatCount(paid)} 塊靈石也不在了。你停在這裡。`,
-    );
+    const failed = `${label}沒有衝過去，靈力沒有收回來。花掉的 ${formatCount(paid)} 塊靈石也不在了。`;
+    markDeath(life, failed);
+    pushLog(life, "choice", failed);
     return;
   }
   pushLog(
@@ -1818,7 +1821,11 @@ const EVENTS: LifeEvent[] = [
       type: "choice",
       id: "sect-exam",
       title: "外門招錄",
-      body: `${pickStable(life, SECTS)}在附近招外門。名額不多，人從坡下排到橋邊。去考要耗掉這一年，考上了才有每年一點靈石和一部能看的功法。`,
+      body: `${(() => {
+        const sect = pickStable(life, SECTS);
+        const call = sect.endsWith("外門") ? sect : `${sect}外門`;
+        return `${call}在附近招人。名額不多，人從坡下排到橋邊。去考要耗掉這一年。考上了，名字寫進外門，主修還是你原來那一部。`;
+      })()}`,
       choices: [
         { id: "sect-exam:go", label: "去應考", hint: "這一年修為幾乎停住。錄不錄得上，看根，也看見識。" },
         { id: "sect-exam:steady", label: "繼續散修", hint: "不排隊。名額讓給別人。" },
@@ -1854,7 +1861,11 @@ const EVENTS: LifeEvent[] = [
       type: "choice",
       id: "sect-take",
       title: "外門缺人",
-      body: `${pickStable(life, SECTS)}外門缺一個跑腿的。不去考，去做事也能上名冊。`,
+      body: `${(() => {
+        const sect = pickStable(life, SECTS);
+        const call = sect.endsWith("外門") ? sect : `${sect}外門`;
+        return `${call}缺一個跑腿的。不去考，去做事也能上名冊。`;
+      })()}`,
       choices: [
         { id: "sect-take:go", label: "去做事", hint: "外門從今天算起。" },
         { id: "sect-take:steady", label: "不去", hint: "仍是尚未入門。" },
@@ -1918,7 +1929,6 @@ const EVENTS: LifeEvent[] = [
         const found = 36 + Math.floor(rng.next() * 150);
         life.stones += found;
         life.insight = clamp(life.insight + 10);
-        if (!life.manual) life.manual = pick(rng, MANUALS);
         pushLog(
           life,
           "choice",
@@ -1950,7 +1960,7 @@ const EVENTS: LifeEvent[] = [
         { id: "page:steady", label: "不買", hint: "靈石留下。" },
       ],
     }),
-    resolve: (life, rng, choiceId) => {
+    resolve: (life, _rng, choiceId) => {
       if (!choiceId.endsWith(":buy")) {
         pushLog(life, "choice", "你沒有買。那頁功法被下一個來的人拿走。");
         return;
@@ -1961,15 +1971,19 @@ const EVENTS: LifeEvent[] = [
       }
       life.stones -= 30;
       life.insight = clamp(life.insight + (life.root === "bian" ? 12 : 6));
-      if (life.root === "bian" || life.root === "tian") {
+      const current = life.manual ?? "原來那一部";
+      const matched = life.root === "bian" || life.root === "tian";
+      if (matched && life.insight >= 18) {
         life.progress += 18;
+        syncQiToProgress(life);
+        pushLog(life, "choice", `你買下那頁手抄。這頁跟你的根對得上，修為往前走了一截。主修仍是${current}。`);
+        return;
       }
-      life.manual = life.manual ?? pick(rng, MANUALS);
-      const fit =
-        life.root === "bian"
-          ? "這頁跟你的變異靈根居然對得上，修為實實在在動了一截。"
-          : "你看得懂一部分。不算白花，也沒有立刻改命。";
-      pushLog(life, "choice", `你買下那頁${life.manual}。${fit}`);
+      if (matched) {
+        pushLog(life, "choice", `你買下那頁手抄。悟性還不到，一句也練不進去。主修仍是${current}。`);
+        return;
+      }
+      pushLog(life, "choice", `你買下那頁手抄。你看得懂一部分，修為沒有因它動。主修仍是${current}。`);
     },
   },
   {
@@ -2025,8 +2039,8 @@ const EVENTS: LifeEvent[] = [
       life.progress += 10;
       if (rng.next() < 0.18) {
         if (rng.next() < 0.28) {
-          markDeath(life, "走火，心境沒有撐住");
-          pushLog(life, "choice", "你硬壓。靈氣沒有回頭。這一世停在走火裡。");
+          markDeath(life, "你硬壓靈氣，氣沒有回頭，人停在走火裡");
+          pushLog(life, "choice", "你硬壓靈氣，氣沒有回頭，人停在走火裡。");
           return;
         }
         life.ling = clamp(life.ling - 20);
@@ -2305,8 +2319,9 @@ const EVENTS: LifeEvent[] = [
       life.ling = clamp(life.ling - 16);
       life.heart = clamp(life.heart - 12);
       if (life.heart < 22 && rng.next() < 0.35) {
-        markDeath(life, "走火，心境沒有撐住");
-        pushLog(life, "choice", `你把 ${formatCount(spent)} 塊靈石全壓進瓶頸。靈力衝上去的同時，心境裂了。你停在化神。`);
+        const burst = `你把 ${formatCount(spent)} 塊靈石全壓進化神的瓶頸，靈力衝上去的時候人裂開了。`;
+        markDeath(life, burst);
+        pushLog(life, "choice", burst);
         return;
       }
       pushLog(
@@ -2640,8 +2655,8 @@ const EVENTS: LifeEvent[] = [
         return;
       }
       if (life.heart < 42 || rng.next() < 0.45) {
-        markDeath(life, "奪舍，心境沒有扛住");
-        pushLog(life, "choice", "你想扛。那個聲音還是把你蓋過去了。");
+        markDeath(life, "你想把奪舍的聲音壓下去，那個聲音還是蓋過了你");
+        pushLog(life, "choice", "你想把奪舍的聲音壓下去，那個聲音還是蓋過了你。");
         return;
       }
       life.heart = clamp(life.heart - 6);
@@ -2674,7 +2689,7 @@ function writeOrigin(life: Life): string {
     .join("");
 }
 
-export const BURIED_ITEM = "一只缺了口的小瓶";
+export const BURIED_ITEM = "一隻缺了口的小瓶";
 
 export function finishMortal(life: Life): Life {
   if (!life.mortal || isFinished(life)) return life;

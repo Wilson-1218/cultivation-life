@@ -29,7 +29,7 @@ export function aimOptions(age: number, highRealm: boolean): AimOption[] {
       id: "work",
       name: young ? "學著做" : "做事",
       up: "生計↑",
-      down: "心境或修為↓",
+      down: "修為少一點",
     },
     {
       id: "friends",
@@ -72,8 +72,8 @@ export function spendOffers(input: {
       name: "給家裡",
       detail: "把靈石留在屋裡。",
       cost: 12,
-      effect: "家人關係上升",
-      record: "你給家裡留了一筆靈石，屋裡的關係暖了。",
+      effect: "人脈上升",
+      record: "你給家裡留了一筆靈石，人脈暖了一點。",
     },
     {
       id: "pill",
@@ -88,8 +88,8 @@ export function spendOffers(input: {
       name: "請同輩",
       detail: "請同一歲的人坐一坐。",
       cost: 4,
-      effect: "心境上升",
-      record: "你請同輩坐了一坐，心境鬆開一點。",
+      effect: "人脈上升，心境留給地圖",
+      record: "你請同輩坐了一坐，人脈暖了一點。",
     },
     {
       id: "job",
@@ -106,7 +106,7 @@ export function spendOffers(input: {
       name: "提親",
       detail: "到了能成家的年紀，家裡還沒有配偶。",
       cost: 18,
-      effect: "家人關係上升，配偶進門",
+      effect: "人脈上升，配偶進門",
       record: "你提了親，人進了屋。",
     });
   }
@@ -127,7 +127,7 @@ export function spendOffers(input: {
       name: "分開",
       detail: "配偶還在這屋。分開之後人還在，只是不住一起。",
       cost: 6,
-      effect: "家人關係下降",
+      effect: "人脈下降",
       record: "你和配偶分開住。人還在，屋子少了一個人。",
     });
   }

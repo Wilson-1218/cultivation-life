@@ -30,20 +30,16 @@ export function progressGain(life: { progress: number; root: RootId; fortune: nu
   return Math.max(12, Math.round(raw * scale * drag * luck));
 }
 
-export function progressLine(kind: string, moved: { crossed: boolean; realmName: string }): string {
-  const where = moved.crossed ? `修為過了門，人到了${moved.realmName}` : `修為厚實地進了一截，人還在${moved.realmName}`;
-  if (kind === "lecture") return `這一堂講道聽完，${where}。`;
-  if (kind === "teach") return `口訣對過一遍，${where}。`;
-  if (kind === "pill") return `丹藥見了效，${where}。`;
-  if (kind === "page") return `殘頁上的路你走通了，${where}。`;
-  if (kind === "library") return `藏經閣裡坐了一晚，${where}。`;
-  return `${where}。`;
+export function progressLine(_kind: string, moved: { crossed: boolean; realmName: string }): string {
+  if (moved.crossed) return `修為過了這道坎，人到了${moved.realmName}。`;
+  return `修為往前走了一截，人還在${moved.realmName}。`;
 }
 
 export function sectStanding(life: { sect: string | null; sectRank: SectRank | null }): string {
   if (life.sectRank === "expelled") return "已經被打發走";
   if (!life.sect || !life.sectRank) return "尚未入門";
   const role = life.sectRank === "inner" ? "內門" : life.sectRank === "watch" ? "值守" : "外門";
+  if (life.sect.endsWith(role)) return `${life.sect} · 弟子`;
   return `${life.sect} · ${role}`;
 }
 
