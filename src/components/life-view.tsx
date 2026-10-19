@@ -78,6 +78,7 @@ export function LifeView({
   const record = [...life.log].reverse();
   const rootLabel = life.story && !life.revealed ? "尚未測靈" : life.mortal ? "無靈根" : ROOTS[life.root].name;
   const realmLabel = life.mortal && life.revealed ? "凡人" : realm.name;
+  const commonAge = life.mortal && life.revealed ? life.lifespan : realm.lifespan;
 
   return (
     <div className="min-h-dvh overflow-x-hidden pb-8">
@@ -136,6 +137,11 @@ export function LifeView({
       <p className="mx-auto max-w-6xl px-4 pt-3 text-sm leading-6 text-muted-foreground sm:px-6">
         想看快一點可以按 4× 或 8×，遇到抉擇會停下來。
       </p>
+      {choice ? (
+        <p className="mx-auto max-w-6xl px-4 pt-2 text-sm font-semibold leading-6 text-[#9c2f2a] sm:px-6">
+          停在抉擇。時間不會自己往下走。選一個，或按自動抉擇。
+        </p>
+      ) : null}
 
       <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[16.5rem_minmax(0,1fr)_18rem] lg:gap-5">
         <section aria-label="這個人" className="min-w-0 border border-border bg-card p-4">
@@ -194,6 +200,9 @@ export function LifeView({
             {life.story ? (
               <>
                 <h2 className="mt-2 text-2xl font-semibold">{age}歲</h2>
+                {choice ? (
+                  <p className="mt-2 text-sm leading-6 text-[#9c2f2a]">這一年停住了。選完才往下走。</p>
+                ) : null}
                 {life.yearLines.length > 0 ? (
                   <ul className="mt-3 flex flex-col gap-3">
                     {life.yearLines.map((line, index) => (
@@ -202,6 +211,8 @@ export function LifeView({
                       </li>
                     ))}
                   </ul>
+                ) : choice ? (
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">這一年還沒有別的事，就停在這件抉擇上。</p>
                 ) : null}
               </>
             ) : life.log.length > 0 ? (
@@ -218,7 +229,7 @@ export function LifeView({
                 </h2>
                 <p className="mt-3 break-words text-base leading-8">{choice.body}</p>
                 <div className="mt-4 flex flex-col gap-2">
-                  {choice.choices.map((item) => {
+                  {choice.choices.map((item, index) => {
                     const mark = buttonMark(choice.title, choice.body, item.label);
                     return (
                       <Button
@@ -227,7 +238,8 @@ export function LifeView({
                         className="h-auto min-h-12 w-full items-start justify-start px-4 py-3 text-left whitespace-normal"
                         onClick={() => onChoice(item.id)}
                       >
-                        <span className="flex min-w-0 items-start gap-2">
+                        <span className="flex min-w-0 items-start gap-3">
+                          <span className="num mt-0.5 w-4 shrink-0 text-muted-foreground">{index + 1}</span>
                           {mark ? <Mark name={mark} className="mt-1 size-4" /> : null}
                           <span className="flex min-w-0 flex-col items-start gap-1">
                             <span className="break-words text-base">{item.label}</span>
@@ -300,26 +312,25 @@ export function LifeView({
             {record.length === 0 ? (
               <p className="mt-3 text-sm leading-7 text-muted-foreground">這一歲的事還寫在上面。</p>
             ) : (
-              <ul className="mt-3 flex max-h-[28rem] flex-col gap-4 overflow-y-auto">
+              <ul className="mt-3 flex max-h-[28rem] flex-col overflow-y-auto">
                 {record.map((entry) => (
-                  <li key={entry.id} className="border-l border-border pl-3 text-sm leading-7">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 break-words">
-                        {passageMark(entry.text) ? (
-                          <Mark name={passageMark(entry.text)!} className="mr-1.5 align-[-0.15em]" />
-                        ) : null}
-                        <span className="num text-muted-foreground">{entry.age}歲 · </span>
-                        {entry.text}
-                      </p>
-                      <Button
-                        variant="ghost"
-                        className="h-8 shrink-0 px-2 text-xs"
-                        aria-pressed={entry.starred}
-                        onClick={() => onStar(entry.id)}
-                      >
-                        {entry.starred ? "已記住" : "記住"}
-                      </Button>
-                    </div>
+                  <li key={entry.id} className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-start gap-2 border-b border-border/70 py-2 text-sm leading-6">
+                    <span className="num text-muted-foreground">{entry.age}歲</span>
+                    <p className="min-w-0 break-words">
+                      {passageMark(entry.text) ? (
+                        <Mark name={passageMark(entry.text)!} className="mr-1.5 align-[-0.15em]" />
+                      ) : null}
+                      {entry.text}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0 px-0"
+                      aria-pressed={entry.starred}
+                      aria-label={entry.starred ? "已記住" : "記住這一行"}
+                      onClick={() => onStar(entry.id)}
+                    >
+                      {entry.starred ? "★" : "☆"}
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -330,30 +341,38 @@ export function LifeView({
         <aside className="flex min-w-0 flex-col gap-4">
           <section className="border border-border bg-card p-4">
             <h2 className="text-sm text-muted-foreground">家人與生活</h2>
-            <p className="mt-2 break-words text-sm leading-7">{workLine(house, age)}</p>
-            <ul className="mt-3 flex flex-col gap-2 text-sm leading-6">
-              {kinRows(house).map((line) => (
-                <li key={line} className="flex items-baseline justify-between gap-3 border-b border-border/70 pb-2">
-                  <span className="min-w-0 break-words">{line}</span>
+            <ul className="mt-3 flex flex-col text-sm leading-6">
+              <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border/70 py-2">
+                <span>你</span>
+                <span className="text-right text-muted-foreground">{workDoing(house, age)}</span>
+              </li>
+              {kinRows(house, age).map((row) => (
+                <li key={row.who} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border/70 py-2">
+                  <span className="min-w-0 break-words">{row.who}</span>
+                  <span className="shrink-0 text-right text-muted-foreground">{row.doing}</span>
                 </li>
               ))}
             </ul>
           </section>
 
           <section className="border border-border bg-card p-4">
-            <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Mark name="companion" />
-              同輩道友
-            </h2>
-            <ul className="mt-2 flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Mark name="companion" />
+                同輩道友
+              </h2>
+              <p className="text-xs text-muted-foreground">此刻，跟你同一歲</p>
+            </div>
+            <ul className="mt-2 flex flex-col">
               {life.companions.map((companion) => {
                 const now = companionNow(companion, age);
+                const stage = now.alive ? (companion.mortal ? "凡人" : realmById(now.realm).name) : `${companion.deathAge}歲已走`;
                 return (
-                  <li key={companion.name}>
+                  <li key={companion.name} className="border-b border-border/70">
                     <button
                       type="button"
                       className={cn(
-                        "w-full min-w-0 rounded-sm px-0 py-1 text-left text-sm leading-6 hover:text-[#9c2f2a]",
+                        "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-left text-sm leading-6 hover:text-[#9c2f2a]",
                         !now.alive && "text-muted-foreground",
                       )}
                       onClick={() => {
@@ -361,8 +380,8 @@ export function LifeView({
                         setReading(companion);
                       }}
                     >
-                      <span className="block break-words">{now.text}</span>
-                      <span className="text-xs text-[#9c2f2a]">{now.alive ? "看這一生" : "已死 · 看這一生"}</span>
+                      <span className="min-w-0 break-words">{companion.name}</span>
+                      <span className="shrink-0 text-right">{stage}</span>
                     </button>
                   </li>
                 );
@@ -372,9 +391,12 @@ export function LifeView({
 
           <section className="border border-border bg-card p-4">
             <h2 className="text-sm text-muted-foreground">人生地圖</h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">一格一年。過完的年份在這裡。</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              一格一年。顏色越深，這一年的心境越穩。
+              {commonAge <= 180 ? `粗框是常見能活到的 ${commonAge} 歲。` : `這一境常見能活到 ${commonAge} 歲。`}
+            </p>
             <div className="mt-3">
-              <YearGrid lived={age} hearts={life.heartByAge} current={age} />
+              <YearGrid lived={age} hearts={life.heartByAge} current={age} markAge={commonAge <= 180 ? commonAge : null} />
             </div>
           </section>
         </aside>
@@ -432,25 +454,28 @@ function familyTies(house: Household | null): { score: number; detail: string } 
   return { score, detail: home.length === 0 ? "屋裡沒有別的人" : `${home.length} 人還在` };
 }
 
-function kinRows(house: Household | null): string[] {
-  if (!house) return ["家裡還沒寫上名字"];
+function kinRows(house: Household | null, age: number): { who: string; doing: string }[] {
+  if (!house) return [];
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
-  const lines = people.map(kinLine).filter((line): line is string => Boolean(line));
-  return lines.length > 0 ? lines : ["名字都還在，人還沒聚齊"];
+  return people.map((kin) => kinParts(kin, age)).filter((row): row is { who: string; doing: string } => Boolean(row));
 }
 
-function kinLine(kin: Kin): string | null {
+function kinParts(kin: Kin, age: number): { who: string; doing: string } | null {
   if (!kin.present && !kin.dead && !kin.away) return null;
-  if (kin.dead) return `${kin.call} ${kin.name}　已經不在`;
-  if (kin.away) return `${kin.call} ${kin.name}　不在這屋`;
-  if (kin.sick) return `${kin.call} ${kin.name}　病著`;
-  if (kin.role === "spouse") return `${kin.name}　在屋裡`;
-  if (kin.role === "child") return `${kin.call} ${kin.name}　在家裡`;
-  return `${kin.call} ${kin.name}　在家`;
+  const who = kin.role === "spouse" ? kin.name : `${kin.call} ${kin.name}`;
+  let doing = "在家";
+  if (kin.dead) doing = "已經不在";
+  else if (kin.away) doing = "不在這屋";
+  else if (kin.sick) doing = "病著";
+  else if (kin.role === "spouse") doing = "在屋裡";
+  else if (kin.role === "child") doing = "在家裡";
+  const years = kin.role === "child" || (kin.role === "sibling" && kin.born > 0) ? Math.max(0, age - kin.born) : null;
+  if (years != null) doing = `${years}歲 · ${doing}`;
+  return { who, doing };
 }
 
-function workLine(house: Household | null, age: number): string {
-  if (!house) return "生計還沒寫上。";
-  if (!house.seen.includes("job") && age < house.jobSince) return `你還住在${house.hamlet}，事情還沒定下來。`;
-  return `你在${house.jobPlace}${house.job}。屋子在${house.hamlet}。`;
+function workDoing(house: Household | null, age: number): string {
+  if (!house) return "生計還沒寫上";
+  if (!house.seen.includes("job") && age < house.jobSince) return "事情還沒定下來";
+  return `${house.jobPlace}${house.job}`;
 }

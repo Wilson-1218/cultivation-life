@@ -37,6 +37,7 @@ export function EndView({
   const share = outlivedPercent(life.age);
   const markAge = life.mortal ? life.lifespan : realm.lifespan;
   const peers = life.companions.map((companion) => `${companion.name} ${companion.finalAge}歲`);
+  const calm = calmestYear(life.heartByAge);
 
   return (
     <main className="mx-auto w-full max-w-3xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-10">
@@ -86,6 +87,15 @@ export function EndView({
             <div className="min-w-0">
               <p className="num text-5xl font-semibold leading-none text-[#1c4d45] sm:text-6xl">{share}%</p>
               <p className="mt-2 text-sm leading-6">同一批裡，活得比你久的比例</p>
+              <p className="mt-2 break-words text-sm leading-6">
+                {life.mortal ? "凡人" : "這一境"}常見能活到 {markAge} 歲，你享年 {life.age} 歲。
+                {life.age < markAge
+                  ? `比常見的歲數少了 ${markAge - life.age} 年。`
+                  : life.age > markAge
+                    ? `比常見的歲數多了 ${life.age - markAge} 年。`
+                    : "剛好走到常見的歲數。"}
+                {calm != null ? `心境最穩的一年是 ${calm} 歲。` : ""}
+              </p>
               <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">
                 {life.mortal
                   ? `你沒有停在修途的層上。各層加起來 ${formatPeople(censusTotal())} 人。`
@@ -226,7 +236,22 @@ function familyCount(house: Household | null): string {
   if (!house) return "沒有寫上";
   const people = [house.father, house.mother, ...house.siblings, house.spouse, ...house.children];
   const known = people.filter((kin) => kin.present || kin.dead || kin.away);
-  return `${known.length}人`;
+  const home = known.filter((kin) => kin.present && !kin.dead && !kin.away).map((kin) => kin.name);
+  if (home.length === 0) return `${known.length}人，走的時候屋裡沒有別人`;
+  return `${known.length}人，走時還在的是${home.join("、")}`;
+}
+
+function calmestYear(hearts: number[]): number | null {
+  let best = -1;
+  let age: number | null = null;
+  hearts.forEach((value, index) => {
+    if (typeof value !== "number" || Number.isNaN(value)) return;
+    if (value > best) {
+      best = value;
+      age = index;
+    }
+  });
+  return age;
 }
 
 function outlivedPercent(age: number): number {
