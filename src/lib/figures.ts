@@ -1,18 +1,20 @@
 import type { Household } from "@/lib/household";
 
+const assetBase = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const INK_FIGURES = [
-  "/figures/ink-01.jpg",
-  "/figures/ink-02.jpg",
-  "/figures/ink-03.jpg",
-  "/figures/ink-04.jpg",
-  "/figures/ink-05.jpg",
-  "/figures/ink-06.jpg",
-  "/figures/ink-07.jpg",
-  "/figures/ink-08.jpg",
-  "/figures/ink-09.jpg",
-  "/figures/ink-10.jpg",
-  "/figures/ink-11.jpg",
-  "/figures/ink-12.jpg",
+  `${assetBase}/figures/ink-01.jpg`,
+  `${assetBase}/figures/ink-02.jpg`,
+  `${assetBase}/figures/ink-03.jpg`,
+  `${assetBase}/figures/ink-04.jpg`,
+  `${assetBase}/figures/ink-05.jpg`,
+  `${assetBase}/figures/ink-06.jpg`,
+  `${assetBase}/figures/ink-07.jpg`,
+  `${assetBase}/figures/ink-08.jpg`,
+  `${assetBase}/figures/ink-09.jpg`,
+  `${assetBase}/figures/ink-10.jpg`,
+  `${assetBase}/figures/ink-11.jpg`,
+  `${assetBase}/figures/ink-12.jpg`,
 ] as const;
 
 function hashName(name: string): number {

@@ -16,3 +16,9 @@ npm run dev
 開發伺服器聽在 `0.0.0.0:43117`。瀏覽器打開 [http://127.0.0.1:43117](http://127.0.0.1:43117)。
 
 不需要帳號、資料庫或額外的金鑰。前世只留在這台瀏覽器裡。
+
+## 公開網站
+
+GitHub Pages：<https://wilson-1218.github.io/cultivation-life/>
+
+推上 `main` 之後，Actions 會以 `NEXT_PUBLIC_BASE_PATH=/cultivation-life` 做靜態輸出再部署。本機開發不加這個變數，網址仍是根路徑。
